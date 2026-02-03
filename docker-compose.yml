@@ -1,0 +1,109 @@
+version: '3.8'
+
+services:
+  # Backend API Server
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: radar-backend
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      # OpenSearch Configuration
+      OPENSEARCH_HOST: ${OPENSEARCH_HOST:-192.168.92.143}
+      OPENSEARCH_PORT: ${OPENSEARCH_PORT:-9200}
+      OPENSEARCH_PROTOCOL: ${OPENSEARCH_PROTOCOL:-https}
+      OPENSEARCH_USERNAME: ${OPENSEARCH_USERNAME:-admin}
+      OPENSEARCH_PASSWORD: ${OPENSEARCH_PASSWORD:-admin}
+      OPENSEARCH_INDEX_SCANS: ${OPENSEARCH_INDEX_SCANS:-radar-scans}
+      OPENSEARCH_INDEX_DEVICES: ${OPENSEARCH_INDEX_DEVICES:-radar-devices}
+      # Server Configuration
+      PORT: 3001
+      HOST: 0.0.0.0
+      NODE_ENV: production
+      # Disable TLS verification for self-signed certs
+      NODE_TLS_REJECT_UNAUTHORIZED: 0
+    networks:
+      - radar-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3001/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Frontend Dashboard
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VITE_BACKEND_URL: ${VITE_BACKEND_URL:-http://backend:3001}
+    container_name: radar-frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    environment:
+      # Runtime environment variable (for Docker internal communication)
+      VITE_BACKEND_URL: ${VITE_BACKEND_URL:-http://backend:3001}
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - radar-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  radar-network:
+    driver: bridge
+
+# Optional: Add OpenSearch if you want to run it in Docker
+# Uncomment the following section to include OpenSearch
+#
+# services:
+#   opensearch:
+#     image: opensearchproject/opensearch:2.11.0
+#     container_name: radar-opensearch
+#     restart: unless-stopped
+#     environment:
+#       - cluster.name=radar-cluster
+#       - node.name=radar-node
+#       - discovery.type=single-node
+#       - bootstrap.memory_lock=true
+#       - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"
+#       - OPENSEARCH_INITIAL_ADMIN_PASSWORD=MyStrong#Pass90
+#     ulimits:
+#       memlock:
+#         soft: -1
+#         hard: -1
+#       nofile:
+#         soft: 65536
+#         hard: 65536
+#     volumes:
+#       - opensearch-data:/usr/share/opensearch/data
+#     ports:
+#       - "9200:9200"
+#       - "9600:9600"
+#     networks:
+#       - radar-network
+#
+# volumes:
+#   opensearch-data:
+#     driver: local

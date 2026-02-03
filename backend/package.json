@@ -1,0 +1,30 @@
+{
+  "name": "radar-dashboard-backend",
+  "version": "1.0.0",
+  "description": "Backend services for RADAR Dashboard - OpenSearch data fetcher",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js",
+    "fetch": "node scripts/test-fetch.js",
+    "test:connection": "node scripts/test-fetch.js",
+    "raw": "node scripts/view-raw-data.js",
+    "latest": "node scripts/fetch-latest-with-devices.js"
+  },
+  "keywords": [
+    "opensearch",
+    "radar",
+    "network-discovery"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "cors": "^2.8.6",
+    "dotenv": "^16.4.5",
+    "express": "^4.22.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.11"
+  }
+}
