@@ -68,6 +68,9 @@ const AppContent: React.FC = () => {
   
   // Global Search State
   const [searchTerm, setSearchTerm] = useState('');
+  
+  // Track current scan_id to avoid unnecessary updates
+  const currentScanId = useRef<string | null>(null);
   const [filteredDevices, setFilteredDevices] = useState<DeviceRecord[]>([]);
 
   // Action States
@@ -89,6 +92,24 @@ const AppContent: React.FC = () => {
   });
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastRefreshTime, setLastRefreshTime] = useState<Date | null>(null);
+  const notificationPanelRef = useRef<HTMLDivElement>(null);
+
+  // Close notification panel when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (notificationPanelRef.current && !notificationPanelRef.current.contains(event.target as Node)) {
+        setShowNotificationPanel(false);
+      }
+    };
+
+    if (showNotificationPanel) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showNotificationPanel]);
 
   const addNotification = (message: string, type: 'info' | 'success' | 'warning' = 'info') => {
     const id = Date.now();
@@ -138,6 +159,20 @@ const AppContent: React.FC = () => {
 
         if (isMounted) {
           if (validJson && isValidData(validJson)) {
+              // Check if scan_id has changed
+              const newScanId = validJson.scan_id;
+              const isSameScan = newScanId === currentScanId.current;
+              
+              if (isSameScan && !isManual) {
+                console.log(`⏭️  Skipping update - same scan_id: ${newScanId}`);
+                return; // Don't update state if scan hasn't changed
+              }
+              
+              if (!isSameScan) {
+                console.log(`✨ New scan detected: ${newScanId}`);
+                currentScanId.current = newScanId;
+              }
+              
               setData(validJson);
               setLastRefreshTime(new Date());
 
@@ -146,7 +181,7 @@ const AppContent: React.FC = () => {
               
               if (!isFirstLoad.current) {
                  const newMacs = Array.from(currentMacs).filter((x) => !prevDevicesRef.current.has(x as string));
-                 if (newMacs.length > 0) {
+                 if (newMacs.length > 0 && !isSameScan) {
                      const newDeviceCount = newMacs.length;
                      const sampleName = validJson.data.devices.records.find((d: DeviceRecord) => d.mac === newMacs[0])?.name || 'Unknown Device';
                      const msg = newDeviceCount === 1 
@@ -157,7 +192,10 @@ const AppContent: React.FC = () => {
               }
               
               if (isManual) {
-                addNotification('Dashboard refreshed successfully', 'success');
+                const statusMsg = isSameScan 
+                  ? 'Dashboard refreshed (no new scan data)'
+                  : 'Dashboard refreshed successfully';
+                addNotification(statusMsg, 'success');
               }
               
               prevDevicesRef.current = currentMacs as Set<string>;
@@ -574,6 +612,7 @@ const AppContent: React.FC = () => {
              <AnimatePresence>
              {showNotificationPanel && (
                  <motion.div
+                     ref={notificationPanelRef}
                      initial={{ opacity: 0, y: 10, scale: 0.95 }}
                      animate={{ opacity: 1, y: 0, scale: 1 }}
                      exit={{ opacity: 0, y: 10, scale: 0.95 }}

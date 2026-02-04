@@ -152,7 +152,7 @@ const DeviceOverview: React.FC<DeviceOverviewProps> = ({ data, deviceType, onDev
             </div>
             <div className="text-center">
               <div className="text-3xl font-bold text-emerald-400">
-                {filteredDevices.filter(d => d.confidence >= 60).length}
+                {filteredDevices.filter(d => d.state === 'ACTIVE' || d.type === 'Switch').length}
               </div>
               <div className="text-xs text-slate-500 uppercase tracking-wider">Active</div>
             </div>
@@ -173,7 +173,6 @@ const DeviceOverview: React.FC<DeviceOverviewProps> = ({ data, deviceType, onDev
           {currentDevices.map((device, idx) => {
             const connections = connectionCounts.get(device.id) || 0;
             const services = parseServices(device.services);
-            const isHealthy = device.confidence >= 60;
             const isDeviceExpanded = expandedDevices.has(device.id);
           
           return (
@@ -186,8 +185,8 @@ const DeviceOverview: React.FC<DeviceOverviewProps> = ({ data, deviceType, onDev
             >
               <div className="flex items-start gap-2">
                 {/* Icon */}
-                <div className={`p-1.5 rounded-lg border ${isHealthy ? `${colors.bg}/10 ${colors.border}/30` : 'bg-slate-700/30 border-slate-600/30'}`}>
-                  <Icon className={`w-4 h-4 ${isHealthy ? colors.text : 'text-slate-400'}`} />
+                <div className={`p-1.5 rounded-lg border ${device.state === 'ACTIVE' || device.type === 'Switch' ? `${colors.bg}/10 ${colors.border}/30` : 'bg-slate-700/30 border-slate-600/30'}`}>
+                  <Icon className={`w-4 h-4 ${device.state === 'ACTIVE' || device.type === 'Switch' ? colors.text : 'text-slate-400'}`} />
                 </div>
 
                 {/* Main Content */}
@@ -206,12 +205,12 @@ const DeviceOverview: React.FC<DeviceOverviewProps> = ({ data, deviceType, onDev
                     </div>
                     <div className="flex items-center gap-1.5">
                       <div className={`px-2 py-0.5 rounded-full text-[10px] font-bold flex items-center gap-1.5 ${
-                        isHealthy 
+                        device.state === 'ACTIVE' || device.type === 'Switch'
                           ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' 
                           : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
                       }`}>
-                        {isHealthy ? <CheckCircle className="w-2.5 h-2.5" /> : <AlertCircle className="w-2.5 h-2.5" />}
-                        {isHealthy ? 'ACTIVE' : 'LIMITED'}
+                        {device.state === 'ACTIVE' || device.type === 'Switch' ? <CheckCircle className="w-2.5 h-2.5" /> : <AlertCircle className="w-2.5 h-2.5" />}
+                        {device.state === 'ACTIVE' || device.type === 'Switch' ? 'ACTIVE' : 'LIMITED'}
                       </div>
                       <button
                         onClick={(e) => {
@@ -238,7 +237,7 @@ const DeviceOverview: React.FC<DeviceOverviewProps> = ({ data, deviceType, onDev
                       transition={{ duration: 0.3 }}
                     >
                       {/* Details Grid */}
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-3">
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-3 mb-3">
                     <div className="bg-slate-900/50 rounded-lg p-3 border border-slate-800">
                       <div className="flex items-center gap-2 mb-1">
                         <Wifi className="w-3.5 h-3.5 text-purple-400" />
@@ -259,22 +258,100 @@ const DeviceOverview: React.FC<DeviceOverviewProps> = ({ data, deviceType, onDev
 
                     <div className="bg-slate-900/50 rounded-lg p-3 border border-slate-800">
                       <div className="flex items-center gap-2 mb-1">
-                        <Activity className="w-3.5 h-3.5 text-amber-400" />
-                        <span className="text-[10px] text-slate-500 uppercase tracking-wider font-bold">Confidence</span>
+                        <Server className="w-3.5 h-3.5 text-emerald-400" />
+                        <span className="text-[10px] text-slate-500 uppercase tracking-wider font-bold">Open Ports</span>
                       </div>
-                      <div className="text-xl font-bold text-white">{device.confidence}%</div>
+                      <div className="text-xl font-bold text-white">{device.open_ports_count || device.open_ports?.length || 0}</div>
                       <div className="text-[10px] text-slate-600">{device.detection_method}</div>
                     </div>
 
                     <div className="bg-slate-900/50 rounded-lg p-3 border border-slate-800">
                       <div className="flex items-center gap-2 mb-1">
-                        <Server className="w-3.5 h-3.5 text-emerald-400" />
+                        <Activity className="w-3.5 h-3.5 text-amber-400" />
                         <span className="text-[10px] text-slate-500 uppercase tracking-wider font-bold">Services</span>
                       </div>
                       <div className="text-xl font-bold text-white">{services.length}</div>
                       <div className="text-[10px] text-slate-600">Running</div>
                     </div>
                   </div>
+
+                  {/* Switch Ports Status - Only for switches */}
+                  {device.type === 'Switch' && (device.up_ports || device.down_ports) && (
+                    <div className="bg-slate-900/50 rounded-lg p-3 border border-slate-800 mb-3">
+                      <h4 className="text-[10px] text-slate-500 uppercase tracking-wider font-bold mb-2">Port Status</h4>
+                      <div className="grid grid-cols-2 gap-3">
+                        {device.up_ports && (
+                          <div>
+                            <div className="flex items-center gap-2 mb-2">
+                              <div className="w-1.5 h-1.5 bg-emerald-400 rounded-full"></div>
+                              <span className="text-xs text-emerald-400 font-bold">UP ({device.up_ports_count || device.up_ports.length})</span>
+                            </div>
+                            <div className="flex flex-wrap gap-1">
+                              {device.up_ports.slice(0, 3).map((port: string) => (
+                                <span key={port} className="px-1.5 py-0.5 bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 rounded text-[9px] font-mono">
+                                  {port}
+                                </span>
+                              ))}
+                              {device.up_ports.length > 3 && (
+                                <span className="px-1.5 py-0.5 text-slate-500 text-[9px]">
+                                  +{device.up_ports.length - 3}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                        {device.down_ports && (
+                          <div>
+                            <div className="flex items-center gap-2 mb-2">
+                              <div className="w-1.5 h-1.5 bg-slate-600 rounded-full"></div>
+                              <span className="text-xs text-slate-400 font-bold">DOWN ({device.down_ports_count || device.down_ports.length})</span>
+                            </div>
+                            <div className="flex flex-wrap gap-1">
+                              {device.down_ports.slice(0, 3).map((port: string) => (
+                                <span key={port} className="px-1.5 py-0.5 bg-slate-800 text-slate-500 border border-slate-700 rounded text-[9px] font-mono">
+                                  {port}
+                                </span>
+                              ))}
+                              {device.down_ports.length > 3 && (
+                                <span className="px-1.5 py-0.5 text-slate-500 text-[9px]">
+                                  +{device.down_ports.length - 3}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Connection Information */}
+                  {(device.connected_switch || device.neighbors) && (
+                    <div className="bg-slate-900/50 rounded-lg p-3 border border-slate-800 mb-3">
+                      <h4 className="text-[10px] text-slate-500 uppercase tracking-wider font-bold mb-2">Network Connections</h4>
+                      {device.connected_switch && device.connected_switch !== 'None' && (
+                        <div className="mb-1 text-xs">
+                          <span className="text-slate-500">Connected to: </span>
+                          <span className="text-slate-300 font-medium">{device.connected_switch}</span>
+                          {device.connected_port && device.connected_port !== 'None' && (
+                            <span className="text-slate-500 ml-2">Port: {device.connected_port}</span>
+                          )}
+                        </div>
+                      )}
+                      {device.neighbors && device.neighbors.length > 0 && (
+                        <div className="text-xs">
+                          <span className="text-slate-500 block mb-1">Neighbors:</span>
+                          {device.neighbors.slice(0, 2).map((neighbor, idx) => (
+                            <div key={idx} className="text-slate-300 ml-2 text-[10px]">
+                              • {neighbor.ip} via {neighbor.protocol} (Port: {neighbor.port})
+                            </div>
+                          ))}
+                          {device.neighbors.length > 2 && (
+                            <span className="text-slate-500 ml-2 text-[10px]">+{device.neighbors.length - 2} more</span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   {/* Additional Info */}
                   <div className="flex flex-wrap items-center gap-4 text-xs">
@@ -291,7 +368,7 @@ const DeviceOverview: React.FC<DeviceOverviewProps> = ({ data, deviceType, onDev
                     {services.length > 0 && (
                       <div className="flex items-center gap-2">
                         <span className="text-slate-600">Services:</span>
-                        <span className={colors.text}>{services.join(', ')}</span>
+                        <span className={colors.text}>{services.slice(0, 3).join(', ')}{services.length > 3 && ` +${services.length - 3}`}</span>
                       </div>
                     )}
                   </div>

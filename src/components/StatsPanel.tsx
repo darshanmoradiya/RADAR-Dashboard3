@@ -1,10 +1,10 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { RawNetworkData } from '../types';
 import { 
   Server, Monitor, Smartphone, Wifi, Shield, AlertTriangle, 
   Camera, Activity, Database, Terminal, Globe, Lock, AlertOctagon,
-  Clock
+  Clock, ChevronLeft, ChevronRight
 } from 'lucide-react';
 
 interface StatsPanelProps {
@@ -13,6 +13,9 @@ interface StatsPanelProps {
 }
 
 const StatsPanel: React.FC<StatsPanelProps> = ({ data, deviceType }) => {
+  const [servicesPage, setServicesPage] = useState(1);
+  const servicesPerPage = 10;
+  
   if (!data || !data.data || !data.data.devices) return null; // Defensive Check
   const { devices, scan_metadata } = data.data;
 
@@ -45,8 +48,6 @@ const StatsPanel: React.FC<StatsPanelProps> = ({ data, deviceType }) => {
     networkDevices: filteredDevices.filter(d => ['Router', 'Gateway', 'Firewall', 'WAP', 'Access Point'].some(t => d.type.includes(t))).length,
     smartphones: filteredDevices.filter(d => ['Android', 'iOS', 'Phone'].some(t => d.type.includes(t))).length,
     cameras: filteredDevices.filter(d => ['Camera', 'IP Camera'].some(t => d.type.includes(t))).length,
-    highConfidence: filteredDevices.filter(d => d.confidence >= 80).length,
-    lowConfidence: filteredDevices.filter(d => d.confidence < 40).length,
   };
 
   // --- Process Services (Ports) ---
@@ -90,6 +91,12 @@ const StatsPanel: React.FC<StatsPanelProps> = ({ data, deviceType }) => {
   }).sort((a, b) => b.count - a.count); // Sort by prevalence
 
   const highRiskCount = serviceList.filter(s => s.risk === 'HIGH').length;
+
+  // Pagination for services
+  const totalServicesPages = Math.ceil(serviceList.length / servicesPerPage);
+  const startServiceIndex = (servicesPage - 1) * servicesPerPage;
+  const endServiceIndex = startServiceIndex + servicesPerPage;
+  const currentServices = serviceList.slice(startServiceIndex, endServiceIndex);
 
   const scanDuration = scan_metadata && scan_metadata[0] ? 
     Math.round((new Date(scan_metadata[0].end_time).getTime() - new Date(scan_metadata[0].start_time).getTime()) / 1000) + 's' 
@@ -153,7 +160,7 @@ const StatsPanel: React.FC<StatsPanelProps> = ({ data, deviceType }) => {
       </motion.div>
 
       {/* 2. Category Grid (4x2) */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         
         <StatCard 
             icon={<Monitor className="w-5 h-5" />}
@@ -198,28 +205,22 @@ const StatsPanel: React.FC<StatsPanelProps> = ({ data, deviceType }) => {
             label="IP Cameras"
             subtext="Hikvision & Dahua"
         />
-        <StatCard 
-            icon={<Shield className="w-5 h-5" />}
-            color="bg-emerald-600"
-            count={counts.highConfidence}
-            label="High Confidence"
-            subtext="≥80% confidence"
-        />
-        <StatCard 
-            icon={<AlertTriangle className="w-5 h-5" />}
-            color="bg-yellow-500"
-            textColor="text-yellow-500"
-            count={counts.lowConfidence}
-            label="Low Confidence"
-            subtext="<40% confidence"
-        />
       </div>
 
       {/* 3. Detected Services Panel */}
       <motion.div variants={item} className="bg-[#0f172a] rounded-xl border border-slate-700/50 p-5 shadow-lg">
           <div className="flex justify-between items-center mb-4">
               <h3 className="text-sm font-bold text-white">Detected Services</h3>
-              <span className="bg-slate-800 text-slate-400 text-[10px] px-2 py-1 rounded border border-slate-700">{serviceList.length} total</span>
+              <div className="flex items-center gap-2">
+                <span className="bg-slate-800 text-slate-400 text-[10px] px-2 py-1 rounded border border-slate-700">
+                  {serviceList.length} total
+                </span>
+                {totalServicesPages > 1 && (
+                  <span className="text-[10px] text-slate-500">
+                    Page {servicesPage} of {totalServicesPages}
+                  </span>
+                )}
+              </div>
           </div>
           
           {highRiskCount > 0 && (
@@ -229,8 +230,8 @@ const StatsPanel: React.FC<StatsPanelProps> = ({ data, deviceType }) => {
              </div>
           )}
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3 max-h-[200px] overflow-y-auto custom-scrollbar pr-2">
-            {serviceList.map((service, idx) => (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3">
+            {currentServices.map((service, idx) => (
                 <div key={`${service.port}-${idx}`} className="flex items-center justify-between p-3 bg-slate-900/50 border border-slate-800 rounded-lg group hover:border-slate-600 transition-colors">
                     <div className="flex items-center gap-3">
                         <div className="p-2 bg-slate-800 rounded-md text-slate-400 border border-slate-700 group-hover:text-white transition-colors">
@@ -259,6 +260,72 @@ const StatsPanel: React.FC<StatsPanelProps> = ({ data, deviceType }) => {
                 </div>
             )}
           </div>
+
+          {/* Pagination Controls */}
+          {totalServicesPages > 1 && (
+            <div className="mt-4 pt-4 border-t border-slate-800 flex items-center justify-between">
+              <div className="text-xs text-slate-500">
+                Showing <span className="text-white font-bold">{startServiceIndex + 1}</span> to{' '}
+                <span className="text-white font-bold">{Math.min(endServiceIndex, serviceList.length)}</span> of{' '}
+                <span className="text-white font-bold">{serviceList.length}</span> services
+              </div>
+              
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setServicesPage(Math.max(1, servicesPage - 1))}
+                  disabled={servicesPage === 1}
+                  className={`p-2 rounded-lg transition-all ${
+                    servicesPage === 1
+                      ? 'bg-slate-800/30 text-slate-600 cursor-not-allowed'
+                      : 'bg-slate-800/50 text-slate-300 hover:bg-slate-700/50 hover:text-white'
+                  }`}
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                
+                <div className="flex items-center gap-1">
+                  {Array.from({ length: Math.min(totalServicesPages, 5) }, (_, i) => {
+                    let pageNum;
+                    if (totalServicesPages <= 5) {
+                      pageNum = i + 1;
+                    } else if (servicesPage <= 3) {
+                      pageNum = i + 1;
+                    } else if (servicesPage >= totalServicesPages - 2) {
+                      pageNum = totalServicesPages - 4 + i;
+                    } else {
+                      pageNum = servicesPage - 2 + i;
+                    }
+                    
+                    return (
+                      <button
+                        key={pageNum}
+                        onClick={() => setServicesPage(pageNum)}
+                        className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                          servicesPage === pageNum
+                            ? 'bg-blue-600/20 text-blue-400 border border-blue-500/30'
+                            : 'bg-slate-800/30 text-slate-400 hover:bg-slate-800/50 hover:text-white'
+                        }`}
+                      >
+                        {pageNum}
+                      </button>
+                    );
+                  })}
+                </div>
+                
+                <button
+                  onClick={() => setServicesPage(Math.min(totalServicesPages, servicesPage + 1))}
+                  disabled={servicesPage === totalServicesPages}
+                  className={`p-2 rounded-lg transition-all ${
+                    servicesPage === totalServicesPages
+                      ? 'bg-slate-800/30 text-slate-600 cursor-not-allowed'
+                      : 'bg-slate-800/50 text-slate-300 hover:bg-slate-700/50 hover:text-white'
+                  }`}
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
       </motion.div>
     </motion.div>
   );

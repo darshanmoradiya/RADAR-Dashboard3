@@ -122,9 +122,10 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
             animate={{ x: 0, opacity: 1 }}
             exit={{ x: "100%", opacity: 0 }}
             transition={{ type: "spring", stiffness: 300, damping: 30 }}
-            className="w-full lg:w-96 bg-[#0f172a]/95 backdrop-blur-xl border-l border-slate-700/50 p-6 overflow-y-auto absolute right-0 top-0 bottom-0 shadow-[ -10px_0_30px_rgba(0,0,0,0.5)] z-20"
+            className="w-full lg:w-96 bg-[#0f172a]/95 backdrop-blur-xl border-l border-slate-700/50 absolute right-0 top-0 bottom-0 shadow-[-10px_0_30px_rgba(0,0,0,0.5)] z-20 flex flex-col"
           >
-            <div className="flex justify-between items-start mb-6">
+            {/* Header - Fixed */}
+            <div className="flex justify-between items-start p-6 pb-4 border-b border-slate-700/50">
                 <div className="flex items-center gap-3">
                     <div className={`w-12 h-12 rounded-xl flex items-center justify-center shadow-lg border border-white/5 ${
                         selectedNode.type === 'Switch' ? 'bg-blue-600/20 text-blue-400' :
@@ -142,7 +143,9 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
               </button>
             </div>
             
-            <div className="space-y-5">
+            {/* Content - Scrollable */}
+            <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
+              <div className="space-y-5">
               <DetailRow label="Status">
                 <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide border ${
                     selectedNode.state === 'ACTIVE' 
@@ -165,20 +168,145 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
 
               <DetailRow label="Vendor">{selectedNode.vendor}</DetailRow>
               
-              <div className="grid grid-cols-2 gap-4">
-                <DetailRow label="Detection Method">
-                    <div className="flex items-center gap-2 text-slate-300">
-                        <Shield className="w-3 h-3 text-indigo-400" />
-                        {selectedNode.method || 'Unknown'}
-                    </div>
-                </DetailRow>
-                <DetailRow label="Confidence">
-                    <div className="flex items-center gap-2 text-slate-300">
-                        <Zap className={`w-3 h-3 ${selectedNode.confidence > 50 ? 'text-amber-400' : 'text-slate-500'}`} />
-                        {selectedNode.confidence}%
-                    </div>
-                </DetailRow>
-              </div>
+              <DetailRow label="Detection Method">
+                  <div className="flex items-center gap-2 text-slate-300">
+                      <Shield className="w-3 h-3 text-indigo-400" />
+                      {selectedNode.method || 'Unknown'}
+                  </div>
+              </DetailRow>
+
+              {/* Open Ports & Services */}
+              {selectedNode.details && selectedNode.details.open_ports && selectedNode.details.open_ports.length > 0 && (
+                <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-800">
+                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Open Ports</h4>
+                  <div className="flex flex-wrap gap-2">
+                    {selectedNode.details.open_ports.map((port: number) => (
+                      <span key={port} className="px-2 py-1 bg-blue-600/20 text-blue-400 border border-blue-500/30 rounded text-xs font-mono">
+                        {port}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Services */}
+              {selectedNode.details && selectedNode.details.services && (
+                <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-800">
+                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Running Services</h4>
+                  <div className="space-y-2">
+                    {Object.entries(
+                      typeof selectedNode.details.services === 'string' 
+                        ? JSON.parse(selectedNode.details.services) 
+                        : selectedNode.details.services
+                    ).map(([port, service]) => (
+                      <div key={port} className="flex items-center justify-between text-xs">
+                        <span className="text-slate-300">{service}</span>
+                        <span className="text-slate-500 font-mono">:{port}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Network Connection Info */}
+              {selectedNode.details && (
+                (selectedNode.details.connected_switch && selectedNode.details.connected_switch !== 'None' && selectedNode.details.connected_switch !== 'Unknown') || 
+                (selectedNode.details.neighbors && selectedNode.details.neighbors.length > 0)
+              ) && (
+                <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-800">
+                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Network Connections</h4>
+                  <div className="space-y-3">
+                    {selectedNode.details.connected_switch && 
+                     selectedNode.details.connected_switch !== 'None' && 
+                     selectedNode.details.connected_switch !== 'Unknown' && (
+                      <div className="bg-slate-800/30 p-3 rounded-lg">
+                        <div className="flex items-center gap-2 mb-1">
+                          <Server className="w-4 h-4 text-blue-400" />
+                          <span className="text-xs text-slate-400">Connected Switch</span>
+                        </div>
+                        <div className="ml-6">
+                          <span className="text-sm text-white font-medium">{selectedNode.details.connected_switch}</span>
+                          {selectedNode.details.connected_port && 
+                           selectedNode.details.connected_port !== 'None' && 
+                           selectedNode.details.connected_port !== 'Unknown' && (
+                            <span className="text-xs text-emerald-400 ml-2 font-mono bg-emerald-500/10 px-2 py-0.5 rounded">
+                              Port {selectedNode.details.connected_port}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                    {selectedNode.details.neighbors && selectedNode.details.neighbors.length > 0 && (
+                      <div className="bg-slate-800/30 p-3 rounded-lg">
+                        <div className="flex items-center gap-2 mb-2">
+                          <NetworkIcon className="w-4 h-4 text-purple-400" />
+                          <span className="text-xs text-slate-400">LLDP/CDP Neighbors ({selectedNode.details.neighbors.length})</span>
+                        </div>
+                        <div className="ml-6 space-y-2">
+                          {selectedNode.details.neighbors.map((neighbor: any, idx: number) => (
+                            <div key={idx} className="flex items-center gap-2 text-xs">
+                              <span className="text-white font-mono">{neighbor.ip}</span>
+                              <span className="text-slate-500">•</span>
+                              <span className="text-purple-400">{neighbor.protocol}</span>
+                              <span className="text-slate-500">•</span>
+                              <span className="text-emerald-400 font-mono">{neighbor.port}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Switch Ports Status */}
+              {selectedNode.type === 'Switch' && selectedNode.details && (selectedNode.details.up_ports || selectedNode.details.down_ports) && (
+                <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-800">
+                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Port Status</h4>
+                  <div className="grid grid-cols-2 gap-4">
+                    {selectedNode.details.up_ports && (
+                      <div>
+                        <div className="flex items-center gap-2 mb-2">
+                          <div className="w-2 h-2 bg-emerald-400 rounded-full"></div>
+                          <span className="text-xs text-emerald-400 font-bold">UP ({selectedNode.details.up_ports_count || selectedNode.details.up_ports.length})</span>
+                        </div>
+                        <div className="flex flex-wrap gap-1">
+                          {selectedNode.details.up_ports.slice(0, 5).map((port: string) => (
+                            <span key={port} className="px-1.5 py-0.5 bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 rounded text-[10px] font-mono">
+                              {port}
+                            </span>
+                          ))}
+                          {selectedNode.details.up_ports.length > 5 && (
+                            <span className="px-1.5 py-0.5 text-slate-500 text-[10px]">
+                              +{selectedNode.details.up_ports.length - 5}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                    {selectedNode.details.down_ports && (
+                      <div>
+                        <div className="flex items-center gap-2 mb-2">
+                          <div className="w-2 h-2 bg-slate-600 rounded-full"></div>
+                          <span className="text-xs text-slate-400 font-bold">DOWN ({selectedNode.details.down_ports_count || selectedNode.details.down_ports.length})</span>
+                        </div>
+                        <div className="flex flex-wrap gap-1">
+                          {selectedNode.details.down_ports.slice(0, 5).map((port: string) => (
+                            <span key={port} className="px-1.5 py-0.5 bg-slate-800 text-slate-500 border border-slate-700 rounded text-[10px] font-mono">
+                              {port}
+                            </span>
+                          ))}
+                          {selectedNode.details.down_ports.length > 5 && (
+                            <span className="px-1.5 py-0.5 text-slate-500 text-[10px]">
+                              +{selectedNode.details.down_ports.length - 5}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
               
               <div className="mt-8 pt-6 border-t border-slate-800">
                  <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-4">Quick Actions</h4>
@@ -222,6 +350,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
                         </motion.div>
                     )}
                  </AnimatePresence>
+              </div>
               </div>
             </div>
           </motion.div>
