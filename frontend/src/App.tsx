@@ -202,17 +202,31 @@ const AppContent: React.FC = () => {
         const backendUrl = (import.meta as any).env.VITE_BACKEND_URL || 'http://localhost:3001';
         const token = localStorage.getItem('token');
         
-        const res = await fetch(`${backendUrl}/api/latest-scan`, {
+        let res = await fetch(`${backendUrl}/api/latest-scan`, {
           cache: "no-store",
           headers: {
             'Authorization': `Bearer ${token}`
           }
         });
 
+        // Fallback to test endpoint if authentication fails
+        if (!res.ok && (res.status === 401 || res.status === 403 || res.status === 500)) {
+          console.warn(`❌ Backend API error: ${res.status} ${res.statusText}. Trying test endpoint...`);
+          
+          // Try test endpoint as fallback
+          res = await fetch(`${backendUrl}/api/latest-scan-test`, {
+            cache: "no-store"
+          });
+          
+          if (res.ok && isManual) {
+            addNotification('Using test data (authentication issue)', 'info');
+          }
+        }
+
         if (!res.ok) {
           console.warn(`Backend API error: ${res.status} ${res.statusText}`);
           
-          // Handle 401/403 - redirect to login
+          // Handle 401/403 - redirect to login (only if test endpoint also failed)
           if (res.status === 401 || res.status === 403) {
             const errorData = await res.json().catch(() => ({}));
             const message = errorData.message || 'Session expired';

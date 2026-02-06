@@ -500,11 +500,12 @@
 
 // export default HierarchyView;
 import React, { useMemo, useState } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { RawNetworkData, DeviceRecord, ConnectionRecord } from '../types';
 import { 
   Server, Monitor, Smartphone, Wifi, Shield, Camera, 
-  Router, HardDrive, Activity, Network, ChevronDown, ChevronRight
+  Router, HardDrive, Activity, Network, ChevronDown, ChevronRight,
+  Search, X, Filter, Maximize2, Minimize2, Layers, Zap
 } from 'lucide-react';
 
 interface HierarchyViewProps {
@@ -537,6 +538,10 @@ const getDeviceColor = (type: string) => {
 const HierarchyView: React.FC<HierarchyViewProps> = ({ data, onDeviceSelect, showStandalone = true, rootDeviceType = 'Switch' }) => {
   // State for collapsed categories (key: "switch-{switchId}-{category}" or "standalone-{category}")
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedTypeFilter, setSelectedTypeFilter] = useState<string>('all');
+  const [expandedAll, setExpandedAll] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
   
   if (!data || !data.data || !data.data.devices) return null;
 
@@ -553,6 +558,27 @@ const HierarchyView: React.FC<HierarchyViewProps> = ({ data, onDeviceSelect, sho
       }
       return next;
     });
+  };
+
+  // Expand/Collapse all categories
+  const toggleExpandAll = () => {
+    if (expandedAll) {
+      // Collapse all - add all category keys
+      const allKeys = new Set<string>();
+      hierarchy.rootDevices.forEach(item => {
+        Object.keys(item.categorized).forEach(category => {
+          allKeys.add(`${rootDeviceType}-${item.device.id}-${category}`);
+        });
+      });
+      Object.keys(hierarchy.standaloneCategorized).forEach(category => {
+        allKeys.add(`standalone-${category}`);
+      });
+      setCollapsedCategories(allKeys);
+    } else {
+      // Expand all - clear set
+      setCollapsedCategories(new Set());
+    }
+    setExpandedAll(!expandedAll);
   };
 
   // Build hierarchy structure
@@ -667,6 +693,84 @@ const HierarchyView: React.FC<HierarchyViewProps> = ({ data, onDeviceSelect, sho
     };
   }, [devices, connections, rootDeviceType]);
 
+  // Filter devices based on search and type
+  const filteredHierarchy = useMemo(() => {
+    if (!searchTerm && selectedTypeFilter === 'all') return hierarchy;
+
+    const filterDevice = (device: DeviceRecord) => {
+      const matchesSearch = !searchTerm || 
+        device.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        device.ip.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        device.vendor.toLowerCase().includes(searchTerm.toLowerCase());
+      
+      const matchesType = selectedTypeFilter === 'all' || device.type === selectedTypeFilter;
+      
+      return matchesSearch && matchesType;
+    };
+
+    const filteredRootDevices = hierarchy.rootDevices.map(item => {
+      const filteredCategorized: { [category: string]: DeviceRecord[] } = {};
+      const filteredConnected: DeviceRecord[] = [];
+      
+      Object.entries(item.categorized).forEach(([category, devices]) => {
+        const filtered = devices.filter(filterDevice);
+        if (filtered.length > 0) {
+          filteredCategorized[category] = filtered;
+          filteredConnected.push(...filtered);
+        }
+      });
+      
+      return {
+        ...item,
+        categorized: filteredCategorized,
+        connectedDevices: filteredConnected
+      };
+    });
+
+    const filteredStandaloneCategorized: { [category: string]: DeviceRecord[] } = {};
+    Object.entries(hierarchy.standaloneCategorized).forEach(([category, devices]) => {
+      const filtered = devices.filter(filterDevice);
+      if (filtered.length > 0) {
+        filteredStandaloneCategorized[category] = filtered;
+      }
+    });
+
+    const filteredStandalone = hierarchy.standalone.filter(filterDevice);
+
+    return {
+      rootDevices: filteredRootDevices,
+      standalone: filteredStandalone,
+      standaloneCategorized: filteredStandaloneCategorized
+    };
+  }, [hierarchy, searchTerm, selectedTypeFilter]);
+
+  // Get all unique device types for filter
+  const uniqueTypes = useMemo(() => {
+    const types = new Set<string>();
+    devices.records.forEach(d => types.add(d.type));
+    return Array.from(types).sort();
+  }, [devices]);
+
+  // Calculate statistics
+  const stats = useMemo(() => {
+    const totalDevices = devices.records.length;
+    const totalRootDevices = filteredHierarchy.rootDevices.length;
+    const totalConnected = filteredHierarchy.rootDevices.reduce(
+      (sum, item) => sum + item.connectedDevices.length, 0
+    );
+    const totalStandalone = filteredHierarchy.standalone.length;
+    
+    return {
+      totalDevices,
+      totalRootDevices,
+      totalConnected,
+      totalStandalone,
+      avgConfidence: Math.round(
+        devices.records.reduce((sum, d) => sum + d.confidence, 0) / totalDevices
+      )
+    };
+  }, [devices, filteredHierarchy]);
+
   return (
     <div className="h-full overflow-y-auto custom-scrollbar pb-4">
       <motion.div
@@ -674,15 +778,140 @@ const HierarchyView: React.FC<HierarchyViewProps> = ({ data, onDeviceSelect, sho
         animate={{ opacity: 1, y: 0 }}
         className="space-y-6"
       >
-        {/* Header */}
+        {/* Header with Search and Stats */}
         <div className="glass-panel rounded-xl border border-slate-700/50 p-6">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="p-2 bg-blue-500/10 rounded-lg text-blue-400 border border-blue-500/20">
-              <Network className="w-5 h-5" />
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-blue-500/10 rounded-lg text-blue-400 border border-blue-500/20">
+                <Network className="w-5 h-5" />
+              </div>
+              <div>
+                <h2 className="text-xl font-bold text-white">Network Hierarchy Tree</h2>
+                <p className="text-sm text-slate-400">Visual topology structure with connections</p>
+              </div>
             </div>
-            <div>
-              <h2 className="text-xl font-bold text-white">Network Hierarchy Tree</h2>
-              <p className="text-sm text-slate-400">Visual topology structure with connections</p>
+            
+            {/* Action Buttons */}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={toggleExpandAll}
+                className="flex items-center gap-2 px-3 py-2 text-xs font-medium text-slate-300 bg-slate-800/50 hover:bg-slate-700/50 border border-slate-700 rounded-lg transition-all"
+                title={expandedAll ? 'Collapse All' : 'Expand All'}
+              >
+                {expandedAll ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+                {expandedAll ? 'Collapse' : 'Expand'} All
+              </button>
+              <button
+                onClick={() => setShowFilters(!showFilters)}
+                className={`flex items-center gap-2 px-3 py-2 text-xs font-medium rounded-lg transition-all ${
+                  showFilters 
+                    ? 'text-blue-400 bg-blue-600/20 border border-blue-500/30' 
+                    : 'text-slate-300 bg-slate-800/50 hover:bg-slate-700/50 border border-slate-700'
+                }`}
+              >
+                <Filter className="w-3.5 h-3.5" />
+                Filters
+              </button>
+            </div>
+          </div>
+
+          {/* Search and Filters */}
+          <div className="space-y-3">
+            {/* Search Bar */}
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Search devices by name, IP, or vendor..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-10 pr-10 py-2.5 bg-slate-900/50 border border-slate-700 rounded-lg text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500"
+              />
+              {searchTerm && (
+                <button
+                  onClick={() => setSearchTerm('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+
+            {/* Filter Dropdown */}
+            <AnimatePresence>
+              {showFilters && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="overflow-hidden"
+                >
+                  <div className="flex flex-wrap gap-2 p-3 bg-slate-900/30 rounded-lg border border-slate-700/50">
+                    <button
+                      onClick={() => setSelectedTypeFilter('all')}
+                      className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all ${
+                        selectedTypeFilter === 'all'
+                          ? 'bg-blue-600/20 text-blue-400 border border-blue-500/30'
+                          : 'bg-slate-800/50 text-slate-400 border border-slate-700 hover:border-slate-600'
+                      }`}
+                    >
+                      All Types
+                    </button>
+                    {uniqueTypes.map(type => (
+                      <button
+                        key={type}
+                        onClick={() => setSelectedTypeFilter(type)}
+                        className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all ${
+                          selectedTypeFilter === type
+                            ? 'bg-blue-600/20 text-blue-400 border border-blue-500/30'
+                            : 'bg-slate-800/50 text-slate-400 border border-slate-700 hover:border-slate-600'
+                        }`}
+                      >
+                        {type}
+                      </button>
+                    ))}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+
+          {/* Statistics Cards */}
+          <div className="grid grid-cols-5 gap-3 mt-4">
+            <div className="bg-slate-900/30 border border-slate-700/50 rounded-lg p-3">
+              <div className="flex items-center gap-2 mb-1">
+                <Layers className="w-3.5 h-3.5 text-blue-400" />
+                <span className="text-xs text-slate-400">Total Devices</span>
+              </div>
+              <div className="text-2xl font-bold text-white">{stats.totalDevices}</div>
+            </div>
+            <div className="bg-slate-900/30 border border-slate-700/50 rounded-lg p-3">
+              <div className="flex items-center gap-2 mb-1">
+                <Server className="w-3.5 h-3.5 text-blue-400" />
+                <span className="text-xs text-slate-400">{rootDeviceType}s</span>
+              </div>
+              <div className="text-2xl font-bold text-white">{stats.totalRootDevices}</div>
+            </div>
+            <div className="bg-slate-900/30 border border-slate-700/50 rounded-lg p-3">
+              <div className="flex items-center gap-2 mb-1">
+                <Zap className="w-3.5 h-3.5 text-green-400" />
+                <span className="text-xs text-slate-400">Connected</span>
+              </div>
+              <div className="text-2xl font-bold text-white">{stats.totalConnected}</div>
+            </div>
+            <div className="bg-slate-900/30 border border-slate-700/50 rounded-lg p-3">
+              <div className="flex items-center gap-2 mb-1">
+                <HardDrive className="w-3.5 h-3.5 text-amber-400" />
+                <span className="text-xs text-slate-400">Standalone</span>
+              </div>
+              <div className="text-2xl font-bold text-white">{stats.totalStandalone}</div>
+            </div>
+            <div className="bg-slate-900/30 border border-slate-700/50 rounded-lg p-3">
+              <div className="flex items-center gap-2 mb-1">
+                <Activity className="w-3.5 h-3.5 text-purple-400" />
+                <span className="text-xs text-slate-400">Avg Confidence</span>
+              </div>
+              <div className="text-2xl font-bold text-white">{stats.avgConfidence}%</div>
             </div>
           </div>
         </div>
@@ -700,8 +929,8 @@ const HierarchyView: React.FC<HierarchyViewProps> = ({ data, onDeviceSelect, sho
             </div>
 
             {/* Network Root Devices Tree */}
-            {hierarchy.rootDevices.map((item, idx) => {
-              const isLastRoot = idx === hierarchy.rootDevices.length - 1 && hierarchy.standalone.length === 0;
+            {filteredHierarchy.rootDevices.map((item, idx) => {
+              const isLastRoot = idx === filteredHierarchy.rootDevices.length - 1 && filteredHierarchy.standalone.length === 0;
               const colors = getDeviceColor(item.device.type);
               const Icon = getDeviceIcon(item.device.type);
               
@@ -816,21 +1045,46 @@ const HierarchyView: React.FC<HierarchyViewProps> = ({ data, onDeviceSelect, sho
                                           animate={{ opacity: 1, x: 0 }}
                                           transition={{ delay: (idx * 0.1) + (catIdx * 0.05) + (devIdx * 0.02) }}
                                           onClick={() => onDeviceSelect && onDeviceSelect(device)}
-                                          className="ml-7"
+                                          className="ml-7 group/device"
                                         >
-                                          <div className={`flex items-center gap-2 p-2 bg-slate-900/30 hover:bg-slate-800/50 rounded-lg border border-slate-700/30 hover:border-slate-600 cursor-pointer transition-all group`}>
+                                          <div className={`relative flex items-center gap-2 p-2 bg-slate-900/30 hover:bg-slate-800/50 rounded-lg border border-slate-700/30 hover:border-blue-500/50 cursor-pointer transition-all`}>
                                             <div className={`p-1 rounded ${devColors.bg} ${devColors.text}`}>
                                               <DevIcon className="w-3.5 h-3.5" />
                                             </div>
                                             <div className="flex-1 min-w-0">
                                               <div className="flex items-center gap-2">
-                                                <span className="text-xs font-medium text-slate-300 group-hover:text-white truncate">
+                                                <span className="text-xs font-medium text-slate-300 group-hover/device:text-white truncate">
                                                   {device.name}
                                                 </span>
                                                 <span className="text-[10px] text-slate-500 font-mono">{device.ip}</span>
                                               </div>
                                               <div className="text-[10px] text-slate-600 truncate">
                                                 {device.vendor}
+                                              </div>
+                                            </div>
+                                            {/* Hover tooltip */}
+                                            <div className="absolute left-0 top-full mt-1 w-64 p-3 bg-slate-800 border border-slate-700 rounded-lg shadow-xl opacity-0 group-hover/device:opacity-100 pointer-events-none transition-opacity z-50">
+                                              <div className="text-xs space-y-1">
+                                                <div className="flex justify-between">
+                                                  <span className="text-slate-400">Device:</span>
+                                                  <span className="text-white font-medium">{device.name}</span>
+                                                </div>
+                                                <div className="flex justify-between">
+                                                  <span className="text-slate-400">IP:</span>
+                                                  <span className="text-blue-400 font-mono">{device.ip}</span>
+                                                </div>
+                                                <div className="flex justify-between">
+                                                  <span className="text-slate-400">MAC:</span>
+                                                  <span className="text-slate-300 font-mono text-[10px]">{device.mac || 'N/A'}</span>
+                                                </div>
+                                                <div className="flex justify-between">
+                                                  <span className="text-slate-400">Type:</span>
+                                                  <span className="text-white">{device.type}</span>
+                                                </div>
+                                                <div className="flex justify-between">
+                                                  <span className="text-slate-400">Method:</span>
+                                                  <span className="text-slate-300">{device.detection_method}</span>
+                                                </div>
                                               </div>
                                             </div>
                                             <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold shrink-0 ${
@@ -859,7 +1113,7 @@ const HierarchyView: React.FC<HierarchyViewProps> = ({ data, onDeviceSelect, sho
             })}
 
             {/* Standalone Devices */}
-            {showStandalone && hierarchy.standalone.length > 0 && (
+            {showStandalone && filteredHierarchy.standalone.length > 0 && (
               <div className="relative mt-4">
                 {/* Vertical Line from root */}
                 <div className="absolute left-4 top-0 w-0.5 h-6 bg-slate-700/50"></div>
@@ -873,13 +1127,13 @@ const HierarchyView: React.FC<HierarchyViewProps> = ({ data, onDeviceSelect, sho
                     <HardDrive className="w-5 h-5 text-slate-400" />
                     <div>
                       <div className="text-sm font-bold text-white">Standalone Devices</div>
-                      <div className="text-xs text-slate-500">{hierarchy.standalone.length} devices not connected to {rootDeviceType.toLowerCase()}s</div>
+                      <div className="text-xs text-slate-500">{filteredHierarchy.standalone.length} devices not connected to {rootDeviceType.toLowerCase()}s</div>
                     </div>
                   </div>
 
                   {/* Standalone devices list - Categorized */}
                   <div className="relative ml-6 space-y-4">
-                    {Object.entries(hierarchy.standaloneCategorized).map(([category, categoryDevices], catIdx) => {
+                    {Object.entries(filteredHierarchy.standaloneCategorized).map(([category, categoryDevices], catIdx) => {
                       const isLastCategory = catIdx === Object.entries(hierarchy.standaloneCategorized).length - 1;
                       const categoryColors = getDeviceColor(category);
                       const categoryKey = `standalone-${category}`;
