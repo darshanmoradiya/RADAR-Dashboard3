@@ -13,6 +13,7 @@
 
 import express from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import * as dotenv from 'dotenv';
 import path from 'path';
@@ -32,9 +33,16 @@ process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 const app = express();
 const PORT = process.env.PORT || 3001;
 const HOST = process.env.HOST || '0.0.0.0';
+const NODE_ENV = process.env.NODE_ENV || 'development';
 
 // Connect to MongoDB
 connectDB();
+
+// Security Middleware
+app.use(helmet({
+  contentSecurityPolicy: false, // Disable for dashboard visualizations
+  crossOriginEmbedderPolicy: false
+}));
 
 // Middleware
 app.use(cors({
@@ -50,7 +58,9 @@ app.use('/api/auth', authRoutes);
 // Request logging middleware
 app.use((req, res, next) => {
   const timestamp = new Date().toISOString();
-  console.log(`[${timestamp}] ${req.method} ${req.path}`);
+  // Don't log credentials or sensitive data
+  const path = req.path.includes('auth') ? req.path.split('?')[0] : req.path;
+  console.log(`[${timestamp}] ${req.method} ${path}`);
   next();
 });
 
@@ -619,9 +629,15 @@ app.use((req, res) => {
 // Error handler
 app.use((err, req, res, next) => {
   console.error('💥 Unhandled error:', err);
-  res.status(500).json({
-    error: 'Internal server error',
-    message: err.message
+  
+  // Don't leak error details in production
+  const message = NODE_ENV === 'production' 
+    ? 'An unexpected error occurred' 
+    : err.message;
+  
+  res.status(err.status || 500).json({
+    success: false,
+    message: message
   });
 });
 

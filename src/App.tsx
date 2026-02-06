@@ -967,14 +967,45 @@ const App: React.FC = () => {
 
 // Protected Route Component
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const token = localStorage.getItem('token');
-  
-  if (!token) {
-    return <Navigate to="/login" replace />;
+  const navigate = useNavigate();
+  const [isAuthenticated, setIsAuthenticated] = React.useState(() => {
+    return !!localStorage.getItem('token');
+  });
+
+  // Monitor localStorage changes
+  React.useEffect(() => {
+    const checkAuth = () => {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        setIsAuthenticated(false);
+      }
+    };
+
+    // Check auth every second
+    const interval = setInterval(checkAuth, 1000);
+
+    // Listen for storage events (from other tabs)
+    window.addEventListener('storage', checkAuth);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('storage', checkAuth);
+    };
+  }, []);
+
+  // Redirect to login if not authenticated
+  React.useEffect(() => {
+    if (!isAuthenticated) {
+      navigate('/login', { replace: true });
+    } 
+  }, [isAuthenticated, navigate]);
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;                                                                                            
   }
   
   return <>{children}</>;
-};
+};  
 
 // Login Page Wrapper
 const LoginPageWrapper: React.FC = () => {

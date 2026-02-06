@@ -85,7 +85,7 @@ router.post('/register', authLimiter, async (req, res) => {
       },
     });
   } catch (error) {
-    console.error('Registration error:', error);
+    console.error('Registration error:', error.message);
     res.status(500).json({ 
       success: false, 
       message: 'Server error during registration' 
@@ -145,7 +145,7 @@ router.post('/login', authLimiter, async (req, res) => {
       },
     });
   } catch (error) {
-    console.error('Login error:', error);
+    console.error('Login error:', error.message);
     res.status(500).json({ 
       success: false, 
       message: 'Server error during login' 
@@ -193,7 +193,7 @@ router.get('/verify', async (req, res) => {
 });
 
 // Middleware to protect routes
-export const authenticateToken = (req, res, next) => {
+export const authenticateToken = async (req, res, next) => {
   const token = req.headers.authorization?.split(' ')[1];
 
   if (!token) {
@@ -205,9 +205,27 @@ export const authenticateToken = (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
+    
+    // Verify user still exists in database
+    const user = await User.findById(decoded.id).select('-password');
+    if (!user) {
+      return res.status(401).json({ 
+        success: false, 
+        message: 'User no longer exists' 
+      });
+    }
+    
     req.user = decoded;
     next();
   } catch (error) {
+    // Differentiate between expired and invalid tokens
+    if (error.name === 'TokenExpiredError') {
+      return res.status(401).json({ 
+        success: false, 
+        message: 'Token expired. Please login again.' 
+      });
+    }
+    
     res.status(403).json({ 
       success: false, 
       message: 'Invalid token' 
