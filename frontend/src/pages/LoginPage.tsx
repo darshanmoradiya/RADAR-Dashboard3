@@ -21,10 +21,11 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
     setIsLoading(true);
 
     try {
+      const backendUrl = (import.meta as any).env.VITE_BACKEND_URL || 'http://localhost:3001';
       const endpoint = '/api/auth/login';
       const payload = { username, password };
 
-      const response = await fetch(`http://localhost:3001${endpoint}`, {
+      const response = await fetch(`${backendUrl}${endpoint}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -35,6 +36,16 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
       const data = await response.json();
 
       if (!response.ok) {
+        // Handle specific error cases
+        if (response.status === 429) {
+          throw new Error('Too many login attempts. Please try again in 15 minutes.');
+        } else if (response.status === 401) {
+          throw new Error('Invalid username or password');
+        } else if (response.status === 500) {
+          throw new Error('Server error. Please try again later.');
+        } else if (response.status === 503) {
+          throw new Error('Service temporarily unavailable. Please try again.');
+        }
         throw new Error(data.message || 'Authentication failed');
       }
 
@@ -48,7 +59,12 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
       // Navigate to dashboard
       navigate('/');
     } catch (err: any) {
-      setError(err.message || 'An error occurred');
+      // Network error (fetch failed)
+      if (err.message.includes('fetch')) {
+        setError('Cannot connect to server. Please check your connection.');
+      } else {
+        setError(err.message || 'An error occurred. Please try again.');
+      }
     } finally {
       setIsLoading(false);
     }

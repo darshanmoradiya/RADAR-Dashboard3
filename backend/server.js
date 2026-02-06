@@ -33,7 +33,6 @@ process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 const app = express();
 const PORT = process.env.PORT || 3001;
 const HOST = process.env.HOST || '0.0.0.0';
-const NODE_ENV = process.env.NODE_ENV || 'development';
 
 // Connect to MongoDB
 connectDB();
@@ -630,15 +629,7 @@ app.use((req, res) => {
 app.use((err, req, res, next) => {
   console.error('💥 Unhandled error:', err);
   
-  // Don't leak error details in production
-  const message = NODE_ENV === 'production' 
-    ? 'An unexpected error occurred' 
-    : err.message;
-  
-  res.status(err.status || 500).json({
-    success: false,
-    message: message
-  });
+ 
 });
 
 // Start server
