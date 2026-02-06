@@ -13,10 +13,14 @@
 
 import express from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
+import cookieParser from 'cookie-parser';
 import * as dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { getOpenSearchConfig, getOpenSearchBaseUrl, getAuthHeader } from './modules/config.js';
+import { connectDB } from './config/database.js';
+import authRoutes, { authenticateToken } from './routes/auth.js';
 
 // Load environment variables
 const __filename = fileURLToPath(import.meta.url);
@@ -30,14 +34,32 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 const HOST = process.env.HOST || '0.0.0.0';
 
+// Connect to MongoDB
+connectDB();
+
+// Security Middleware
+app.use(helmet({
+  contentSecurityPolicy: false, // Disable for dashboard visualizations
+  crossOriginEmbedderPolicy: false
+}));
+
 // Middleware
-app.use(cors());
-app.use(express.json());
+app.use(cors({
+  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+  credentials: true
+}));
+app.use(express.json({ limit: '10mb' }));
+app.use(cookieParser());
+
+// Authentication routes
+app.use('/api/auth', authRoutes);
 
 // Request logging middleware
 app.use((req, res, next) => {
   const timestamp = new Date().toISOString();
-  console.log(`[${timestamp}] ${req.method} ${req.path}`);
+  // Don't log credentials or sensitive data
+  const path = req.path.includes('auth') ? req.path.split('?')[0] : req.path;
+  console.log(`[${timestamp}] ${req.method} ${path}`);
   next();
 });
 
@@ -58,7 +80,7 @@ async function fetchLatestScanWithDevices() {
   try {
     // Step 1: Fetch the absolute latest scan from radar-scans index (PRIORITY)
     // Sort by scan_id to get the absolute latest
-    const scanUrl = `${baseUrl}/${config.indices.scans}/_search`;
+    const scanUrl = `${baseUrl}/api/console/proxy?path=${config.indices.scans}/_search&method=POST`;
     const scanQuery = {
       query: { match_all: {} },
       size: 1,  // Get just the latest scan
@@ -72,6 +94,7 @@ async function fetchLatestScanWithDevices() {
       headers: {
         'Content-Type': 'application/json',
         Authorization: authHeader,
+        'osd-xsrf': 'true',
       },
       body: JSON.stringify(scanQuery),
     });
@@ -93,7 +116,7 @@ async function fetchLatestScanWithDevices() {
 
     // Step 2: Fetch all devices for this EXACT scan_id from radar-devices
     // Use match query for date fields (handles both string and numeric representations)
-    const deviceUrl = `${baseUrl}/${config.indices.devices}/_search`;
+    const deviceUrl = `${baseUrl}/api/console/proxy?path=${config.indices.devices}/_search&method=POST`;
     const deviceQuery = {
       query: {
         match: { 'scan_id': scanId }  // Match query works better for date fields
@@ -107,6 +130,7 @@ async function fetchLatestScanWithDevices() {
       headers: {
         'Content-Type': 'application/json',
         Authorization: authHeader,
+        'osd-xsrf': 'true',
       },
       body: JSON.stringify(deviceQuery),
     });
@@ -265,7 +289,7 @@ app.get('/api/health', (req, res) => {
 });
 
 // Diagnostics endpoint - Check data consistency
-app.get('/api/diagnostics', async (req, res) => {
+app.get('/api/diagnostics', authenticateToken, async (req, res) => {
   try {
     const config = getOpenSearchConfig();
     const baseUrl = getOpenSearchBaseUrl();
@@ -397,7 +421,7 @@ app.get('/api/diagnostics', async (req, res) => {
 });
 
 // Get latest scan with all devices
-app.get('/api/latest-scan', async (req, res) => {
+app.get('/api/latest-scan', authenticateToken, async (req, res) => {
   try {
     const now = Date.now();
     
@@ -462,7 +486,7 @@ app.get('/api/latest-scan', async (req, res) => {
 });
 
 // Get scan by ID
-app.get('/api/scan/:scanId', async (req, res) => {
+app.get('/api/scan/:scanId', authenticateToken, async (req, res) => {
   try {
     const { scanId } = req.params;
     const config = getOpenSearchConfig();
@@ -540,7 +564,7 @@ app.get('/api/scan/:scanId', async (req, res) => {
 });
 
 // List all available scans
-app.get('/api/scans', async (req, res) => {
+app.get('/api/scans', authenticateToken, async (req, res) => {
   try {
     const config = getOpenSearchConfig();
     const baseUrl = getOpenSearchBaseUrl();
@@ -604,10 +628,8 @@ app.use((req, res) => {
 // Error handler
 app.use((err, req, res, next) => {
   console.error('💥 Unhandled error:', err);
-  res.status(500).json({
-    error: 'Internal server error',
-    message: err.message
-  });
+  
+ 
 });
 
 // Start server
