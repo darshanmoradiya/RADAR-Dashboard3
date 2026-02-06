@@ -13,10 +13,13 @@
 
 import express from 'express';
 import cors from 'cors';
+import cookieParser from 'cookie-parser';
 import * as dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { getOpenSearchConfig, getOpenSearchBaseUrl, getAuthHeader } from './modules/config.js';
+import { connectDB } from './config/database.js';
+import authRoutes from './routes/auth.js';
 
 // Load environment variables
 const __filename = fileURLToPath(import.meta.url);
@@ -30,9 +33,16 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 const HOST = process.env.HOST || '0.0.0.0';
 
+// Connect to MongoDB
+connectDB();
+
 // Middleware
 app.use(cors());
 app.use(express.json());
+app.use(cookieParser());
+
+// Authentication routes
+app.use('/api/auth', authRoutes);
 
 // Request logging middleware
 app.use((req, res, next) => {
@@ -58,7 +68,7 @@ async function fetchLatestScanWithDevices() {
   try {
     // Step 1: Fetch the absolute latest scan from radar-scans index (PRIORITY)
     // Sort by scan_id to get the absolute latest
-    const scanUrl = `${baseUrl}/${config.indices.scans}/_search`;
+    const scanUrl = `${baseUrl}/api/console/proxy?path=${config.indices.scans}/_search&method=POST`;
     const scanQuery = {
       query: { match_all: {} },
       size: 1,  // Get just the latest scan
@@ -72,6 +82,7 @@ async function fetchLatestScanWithDevices() {
       headers: {
         'Content-Type': 'application/json',
         Authorization: authHeader,
+        'osd-xsrf': 'true',
       },
       body: JSON.stringify(scanQuery),
     });
@@ -93,7 +104,7 @@ async function fetchLatestScanWithDevices() {
 
     // Step 2: Fetch all devices for this EXACT scan_id from radar-devices
     // Use match query for date fields (handles both string and numeric representations)
-    const deviceUrl = `${baseUrl}/${config.indices.devices}/_search`;
+    const deviceUrl = `${baseUrl}/api/console/proxy?path=${config.indices.devices}/_search&method=POST`;
     const deviceQuery = {
       query: {
         match: { 'scan_id': scanId }  // Match query works better for date fields
@@ -107,6 +118,7 @@ async function fetchLatestScanWithDevices() {
       headers: {
         'Content-Type': 'application/json',
         Authorization: authHeader,
+        'osd-xsrf': 'true',
       },
       body: JSON.stringify(deviceQuery),
     });

@@ -40,19 +40,9 @@ const AppContent: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   
-  // Authentication State
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
-    return localStorage.getItem('isAuthenticated') === 'true';
-  });
-
-  const handleLogin = () => {
-    setIsAuthenticated(true);
-    localStorage.setItem('isAuthenticated', 'true');
-  };
-
   const handleLogout = () => {
-    setIsAuthenticated(false);
-    localStorage.removeItem('isAuthenticated');
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
     navigate('/login');
   };
   
@@ -428,15 +418,7 @@ const AppContent: React.FC = () => {
     setShowLogsModal(true);
   };
 
-  // Show login page if not authenticated
-  if (!isAuthenticated) {
-    return (
-      <Routes>
-        <Route path="/login" element={<LoginPage onLogin={handleLogin} />} />
-        <Route path="*" element={<Navigate to="/login" replace />} />
-      </Routes>
-    );
-  }
+
 
   return (
     <div className="flex h-screen overflow-hidden font-sans relative">
@@ -961,9 +943,36 @@ const AppContent: React.FC = () => {
 const App: React.FC = () => {
   return (
     <Router>
-      <AppContent />
+      <Routes>
+        <Route path="/login" element={<LoginPageWrapper />} />
+        <Route path="/*" element={<ProtectedRoute><AppContent /></ProtectedRoute>} />
+      </Routes>
     </Router>
   );
+};
+
+// Protected Route Component
+const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const token = localStorage.getItem('token');
+  
+  if (!token) {
+    return <Navigate to="/login" replace />;
+  }
+  
+  return <>{children}</>;
+};
+
+// Login Page Wrapper
+const LoginPageWrapper: React.FC = () => {
+  const navigate = useNavigate();
+  
+  const handleLogin = (token: string, userData: any) => {
+    localStorage.setItem('token', token);
+    localStorage.setItem('user', JSON.stringify(userData));
+    navigate('/');
+  };
+  
+  return <LoginPage onLogin={handleLogin} />;
 };
 
 export default App;
