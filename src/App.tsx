@@ -40,19 +40,9 @@ const AppContent: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   
-  // Authentication State
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
-    return localStorage.getItem('isAuthenticated') === 'true';
-  });
-
-  const handleLogin = () => {
-    setIsAuthenticated(true);
-    localStorage.setItem('isAuthenticated', 'true');
-  };
-
   const handleLogout = () => {
-    setIsAuthenticated(false);
-    localStorage.removeItem('isAuthenticated');
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
     navigate('/login');
   };
   
@@ -143,12 +133,26 @@ const AppContent: React.FC = () => {
       try {
         // Fetch from backend API instead of static file
         const backendUrl = (import.meta as any).env.VITE_BACKEND_URL || 'http://localhost:3001';
+        const token = localStorage.getItem('token');
+        
         const res = await fetch(`${backendUrl}/api/latest-scan`, {
-          cache: "no-store"
+          cache: "no-store",
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
         });
 
         if (!res.ok) {
           console.warn(`Backend API error: ${res.status} ${res.statusText}`);
+          
+          // Handle 401/403 - redirect to login
+          if (res.status === 401 || res.status === 403) {
+            localStorage.removeItem('token');
+            localStorage.removeItem('user');
+            navigate('/login');
+            return;
+          }
+          
           if (isManual) {
             addNotification('Failed to refresh data', 'warning');
           }
@@ -428,15 +432,7 @@ const AppContent: React.FC = () => {
     setShowLogsModal(true);
   };
 
-  // Show login page if not authenticated
-  if (!isAuthenticated) {
-    return (
-      <Routes>
-        <Route path="/login" element={<LoginPage onLogin={handleLogin} />} />
-        <Route path="*" element={<Navigate to="/login" replace />} />
-      </Routes>
-    );
-  }
+
 
   return (
     <div className="flex h-screen overflow-hidden font-sans relative">
@@ -961,9 +957,67 @@ const AppContent: React.FC = () => {
 const App: React.FC = () => {
   return (
     <Router>
-      <AppContent />
+      <Routes>
+        <Route path="/login" element={<LoginPageWrapper />} />
+        <Route path="/*" element={<ProtectedRoute><AppContent /></ProtectedRoute>} />
+      </Routes>
     </Router>
   );
+};
+
+// Protected Route Component
+const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const navigate = useNavigate();
+  const [isAuthenticated, setIsAuthenticated] = React.useState(() => {
+    return !!localStorage.getItem('token');
+  });
+
+  // Monitor localStorage changes
+  React.useEffect(() => {
+    const checkAuth = () => {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        setIsAuthenticated(false);
+      }
+    };
+
+    // Check auth every second
+    const interval = setInterval(checkAuth, 1000);
+
+    // Listen for storage events (from other tabs)
+    window.addEventListener('storage', checkAuth);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('storage', checkAuth);
+    };
+  }, []);
+
+  // Redirect to login if not authenticated
+  React.useEffect(() => {
+    if (!isAuthenticated) {
+      navigate('/login', { replace: true });
+    } 
+  }, [isAuthenticated, navigate]);
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;                                                                                            
+  }
+  
+  return <>{children}</>;
+};  
+
+// Login Page Wrapper
+const LoginPageWrapper: React.FC = () => {
+  const navigate = useNavigate();
+  
+  const handleLogin = (token: string, userData: any) => {
+    localStorage.setItem('token', token);
+    localStorage.setItem('user', JSON.stringify(userData));
+    navigate('/');
+  };
+  
+  return <LoginPage onLogin={handleLogin} />;
 };
 
 export default App;

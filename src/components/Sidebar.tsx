@@ -143,14 +143,12 @@ const Sidebar: React.FC<SidebarProps> = ({
         />
       </div>
 
-      {/* Logout Button at Bottom */}
+      {/* Logout Button */}
       {onLogout && (
-        <div className="px-3 py-4 border-t border-slate-800/50">
+        <div className="px-3 pt-3 mt-auto border-t border-slate-800/50">
           <button
             onClick={onLogout}
-            className={`group relative p-2.5 rounded-xl flex items-center transition-all duration-300 w-full text-red-400 hover:text-red-300 hover:bg-red-500/10 border border-transparent hover:border-red-500/20 ${
-              isSidebarOpen ? 'justify-start gap-3' : 'justify-center'
-            }`}
+            className={`group relative p-2.5 rounded-xl flex items-center transition-all duration-300 w-full text-red-400 hover:text-red-300 hover:bg-red-500/10 border border-transparent hover:border-red-500/20 ${isSidebarOpen ? 'justify-start gap-3' : 'justify-center'}`}
           >
             <LogOut className="w-4 h-4" />
             {isSidebarOpen && <span className="text-xs font-medium">Logout</span>}
@@ -163,6 +161,7 @@ const Sidebar: React.FC<SidebarProps> = ({
           </button>
         </div>
       )}
+
     </nav>
   );
 };

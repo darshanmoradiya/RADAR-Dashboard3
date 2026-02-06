@@ -4,7 +4,7 @@ import { motion } from 'framer-motion';
 import { Lock, User, Eye, EyeOff, AlertCircle } from 'lucide-react';
 
 interface LoginPageProps {
-  onLogin: () => void;
+  onLogin: (token: string, user: any) => void;
 }
 
 const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
@@ -15,25 +15,43 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  // Static credentials
-  const STATIC_USERNAME = 'admin';
-  const STATIC_PASSWORD = 'Radar#1012';
-
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setIsLoading(true);
 
-    // Simulate a slight delay for better UX
-    setTimeout(() => {
-      if (username === STATIC_USERNAME && password === STATIC_PASSWORD) {
-        onLogin();
-        navigate('/dashboard');
-      } else {
-        setError('Invalid username or password');
-        setIsLoading(false);
+    try {
+      const endpoint = '/api/auth/login';
+      const payload = { username, password };
+
+      const response = await fetch(`http://localhost:3001${endpoint}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Authentication failed');
       }
-    }, 500);
+
+      // Store token in localStorage
+      localStorage.setItem('token', data.token);
+      localStorage.setItem('user', JSON.stringify(data.user));
+      
+      // Call onLogin callback
+      onLogin(data.token, data.user);
+      
+      // Navigate to dashboard
+      navigate('/');
+    } catch (err: any) {
+      setError(err.message || 'An error occurred');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
