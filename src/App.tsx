@@ -133,12 +133,26 @@ const AppContent: React.FC = () => {
       try {
         // Fetch from backend API instead of static file
         const backendUrl = (import.meta as any).env.VITE_BACKEND_URL || 'http://localhost:3001';
+        const token = localStorage.getItem('token');
+        
         const res = await fetch(`${backendUrl}/api/latest-scan`, {
-          cache: "no-store"
+          cache: "no-store",
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
         });
 
         if (!res.ok) {
           console.warn(`Backend API error: ${res.status} ${res.statusText}`);
+          
+          // Handle 401/403 - redirect to login
+          if (res.status === 401 || res.status === 403) {
+            localStorage.removeItem('token');
+            localStorage.removeItem('user');
+            navigate('/login');
+            return;
+          }
+          
           if (isManual) {
             addNotification('Failed to refresh data', 'warning');
           }

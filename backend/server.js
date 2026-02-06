@@ -19,7 +19,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { getOpenSearchConfig, getOpenSearchBaseUrl, getAuthHeader } from './modules/config.js';
 import { connectDB } from './config/database.js';
-import authRoutes from './routes/auth.js';
+import authRoutes, { authenticateToken } from './routes/auth.js';
 
 // Load environment variables
 const __filename = fileURLToPath(import.meta.url);
@@ -37,8 +37,11 @@ const HOST = process.env.HOST || '0.0.0.0';
 connectDB();
 
 // Middleware
-app.use(cors());
-app.use(express.json());
+app.use(cors({
+  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+  credentials: true
+}));
+app.use(express.json({ limit: '10mb' }));
 app.use(cookieParser());
 
 // Authentication routes
@@ -277,7 +280,7 @@ app.get('/api/health', (req, res) => {
 });
 
 // Diagnostics endpoint - Check data consistency
-app.get('/api/diagnostics', async (req, res) => {
+app.get('/api/diagnostics', authenticateToken, async (req, res) => {
   try {
     const config = getOpenSearchConfig();
     const baseUrl = getOpenSearchBaseUrl();
@@ -409,7 +412,7 @@ app.get('/api/diagnostics', async (req, res) => {
 });
 
 // Get latest scan with all devices
-app.get('/api/latest-scan', async (req, res) => {
+app.get('/api/latest-scan', authenticateToken, async (req, res) => {
   try {
     const now = Date.now();
     
@@ -474,7 +477,7 @@ app.get('/api/latest-scan', async (req, res) => {
 });
 
 // Get scan by ID
-app.get('/api/scan/:scanId', async (req, res) => {
+app.get('/api/scan/:scanId', authenticateToken, async (req, res) => {
   try {
     const { scanId } = req.params;
     const config = getOpenSearchConfig();
@@ -552,7 +555,7 @@ app.get('/api/scan/:scanId', async (req, res) => {
 });
 
 // List all available scans
-app.get('/api/scans', async (req, res) => {
+app.get('/api/scans', authenticateToken, async (req, res) => {
   try {
     const config = getOpenSearchConfig();
     const baseUrl = getOpenSearchBaseUrl();

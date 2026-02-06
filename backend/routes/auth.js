@@ -1,14 +1,29 @@
 import express from 'express';
 import jwt from 'jsonwebtoken';
+import rateLimit from 'express-rate-limit';
 import User from '../models/User.js';
 
 const router = express.Router();
 
+// Rate limiter for authentication endpoints
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 8, // 8 attempts per window
+  message: { 
+    success: false, 
+    message: 'Too many authentication attempts. Please try again in 15 minutes.' 
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
 const JWT_EXPIRES_IN = '1d';
 
-// Register new user
-router.post('/register', async (req, res) => {
+// NOTE: Registration endpoint exists but is NOT used in production
+// Users are created directly in MongoDB database
+// Only /login endpoint is actively used
+router.post('/register', authLimiter, async (req, res) => {
   try {
     const { username, email, password } = req.body;
 
@@ -17,6 +32,14 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({ 
         success: false, 
         message: 'Please provide username, email, and password' 
+      });
+    }
+
+    // Basic validation only (users created in DB directly in production)
+    if (username.length < 3) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Username must be at least 3 characters' 
       });
     }
 
@@ -71,7 +94,7 @@ router.post('/register', async (req, res) => {
 });
 
 // Login user
-router.post('/login', async (req, res) => {
+router.post('/login', authLimiter, async (req, res) => {
   try {
     const { username, password } = req.body;
 
