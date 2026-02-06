@@ -92,13 +92,13 @@ async function fetchLatestScanWithDevices() {
     console.log(`📊 Latest scan found: ${scanId} (${latestScan.total_devices} devices)`);
 
     // Step 2: Fetch all devices for this EXACT scan_id from radar-devices
-    // Use term query for exact matching on scan_id field
+    // Use match query for date fields (handles both string and numeric representations)
     const deviceUrl = `${baseUrl}/${config.indices.devices}/_search`;
     const deviceQuery = {
       query: {
-        term: { 'scan_id': scanId }  // Term query for exact match on scan_id
+        match: { 'scan_id': scanId }  // Match query works better for date fields
       },
-      size: 1000,
+      size: 10000,  // Increase size to get all devices from scan
       sort: [{ '@timestamp': { order: 'desc' } }]
     };
 
@@ -157,12 +157,12 @@ function transformToRadarFormat(scan, devices) {
     ip: device.ip || device.ip_address || 'N/A',
     mac: device.mac || device.mac_address || 'N/A',
     vendor: device.vendor || device.manufacturer || 'Unknown',
-    type: device.device_type || device.type || 'Unknown',
+    type: device.type || device.device_type || 'Unknown',  // Use 'type' field first (has Camera, Switch, etc.)
     network: device.network || scan.networks_scanned || 'Unknown Network',
     state: device.state || 'ACTIVE',
     confidence: device.confidence || 85,
     detection_method: device.detection_method || scan.scan_method || 'Network Scan',
-    os: device.os || device.operating_system || 'Unknown',
+    os: device.os_type || device.os || device.operating_system || 'Unknown',
     ports: device.open_ports || [],
     services: device.services || [],
     last_seen: device['@timestamp'] || device.discovered_at || new Date().toISOString(),
@@ -196,10 +196,28 @@ function transformToRadarFormat(scan, devices) {
     }
   });
 
-  // Create dashboard-compatible format
+  // Create dashboard-compatible format with scan metadata
   return {
     export_timestamp: new Date().toISOString(),
     scan_id: scan.scan_id,
+    scan_metadata: {
+      total_devices: scan.total_devices || deviceRecords.length,
+      active_devices: scan.active_devices || 0,
+      inactive_devices: scan.inactive_devices || 0,
+      // Device type counts from scan metadata (most accurate)
+      workstations_count: scan.workstations_count || 0,
+      servers_count: scan.servers_count || 0,
+      switches_count: scan.switches_count || 0,
+      cameras_count: scan.cameras_count || 0,
+      printers_count: scan.printers_count || 0,
+      smartphones_count: scan.smartphones_count || 0,
+      access_points_count: scan.access_points_count || 0,
+      routers_count: scan.routers_count || 0,
+      scan_start: scan.scan_start,
+      scan_end: scan.scan_end,
+      scan_duration_seconds: scan.scan_duration_seconds,
+      networks_scanned: scan.networks_scanned
+    },
     data: {
       devices: {
         count: deviceRecords.length,
@@ -286,7 +304,7 @@ app.get('/api/diagnostics', async (req, res) => {
     const deviceUrl = `${baseUrl}/${config.indices.devices}/_search`;
     const deviceQuery = {
       query: {
-        term: { 'scan_id': scanIdToMatch }  // Term query for exact match
+        match: { 'scan_id': scanIdToMatch }  // Match query for date fields
       },
       size: 0 // Just count, don't return docs
     };

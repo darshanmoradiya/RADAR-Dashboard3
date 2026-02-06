@@ -56,13 +56,28 @@ export interface NeighborRecord {
 }
 
 export interface ScanMetadata {
-  id: number;
-  start_time: string;
-  end_time: string;
+  id?: number;
+  start_time?: string;
+  end_time?: string;
   total_devices: number;
-  total_networks: number;
-  snmp_version: string;
-  community: string;
+  total_networks?: number;
+  snmp_version?: string;
+  community?: string;
+  // Device type counts from scan metadata
+  active_devices?: number;
+  inactive_devices?: number;
+  workstations_count?: number;
+  servers_count?: number;
+  switches_count?: number;
+  cameras_count?: number;
+  printers_count?: number;
+  smartphones_count?: number;
+  access_points_count?: number;
+  routers_count?: number;
+  scan_start?: string;
+  scan_end?: string;
+  scan_duration_seconds?: number;
+  networks_scanned?: string;
 }
 
 export interface ScanStateRecord {
@@ -81,8 +96,10 @@ export interface PortAnalysis {
 
 export interface RawNetworkData {
   export_timestamp: string;
-  export_type: string;
-  database_source: string;
+  export_type?: string;
+  database_source?: string;
+  scan_id?: string;
+  scan_metadata?: ScanMetadata;  // New: scan-level metadata for accurate counts
   data: {
     devices: {
       count: number;
@@ -92,20 +109,20 @@ export interface RawNetworkData {
       count: number;
       records: ConnectionRecord[];
     };
-    neighbors: {
+    neighbors?: {
       count: number;
       records: NeighborRecord[];
     };
-    scan_metadata: ScanMetadata[];
-    scan_state: {
+    scan_metadata?: ScanMetadata[];
+    scan_state?: {
       count: number;
       records: ScanStateRecord[];
     };
-    device_type_breakdown: Record<string, number>;
-    vendor_breakdown: Record<string, number>;
-    name_resolution_sources: Record<string, number>;
-    confidence_distribution: Record<string, number>;
-    port_analysis: PortAnalysis;
+    device_type_breakdown?: Record<string, number>;
+    vendor_breakdown?: Record<string, number>;
+    name_resolution_sources?: Record<string, number>;
+    confidence_distribution?: Record<string, number>;
+    port_analysis?: PortAnalysis;
     all_unique_macs?: {
       count: number;
       list: string[];
@@ -118,6 +135,18 @@ export interface RawNetworkData {
     logged_in_users?: {
       count: number;
       list: string[];
+    };
+    networks?: {
+      count: number;
+      records: Array<{
+        id: number;
+        name: string;
+        subnet: string;
+        scan_method: string;
+        scan_start: string;
+        scan_end: string;
+        scan_duration: number;
+      }>;
     };
   };
 }

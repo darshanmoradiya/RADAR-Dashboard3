@@ -40,8 +40,17 @@ const StatsPanel: React.FC<StatsPanelProps> = ({ data, deviceType }) => {
   };
   const categoryLabel = deviceType ? getPluralLabel(deviceType) : 'All Devices';
 
-  // --- Calculate Category Counts ---
-  const counts = {
+  // --- Use scan_metadata counts if available, otherwise fall back to counting devices ---
+  const useScanMetadata = data.scan_metadata && !deviceType;  // Use metadata only for all devices view
+  
+  const counts = useScanMetadata ? {
+    workstations: data.scan_metadata?.workstations_count || 0,
+    servers: data.scan_metadata?.servers_count || 0,
+    switches: data.scan_metadata?.switches_count || 0,
+    networkDevices: (data.scan_metadata?.routers_count || 0) + (data.scan_metadata?.access_points_count || 0),
+    smartphones: data.scan_metadata?.smartphones_count || 0,
+    cameras: data.scan_metadata?.cameras_count || 0,
+  } : {
     workstations: filteredDevices.filter(d => ['Desktop', 'Workstation', 'Laptop', 'Windows', 'Linux'].some(t => d.type.includes(t))).length,
     servers: filteredDevices.filter(d => ['Server', 'Ubuntu', 'CentOS', 'Debian'].some(t => d.type.includes(t))).length,
     switches: filteredDevices.filter(d => d.type === 'Switch').length,
@@ -49,6 +58,11 @@ const StatsPanel: React.FC<StatsPanelProps> = ({ data, deviceType }) => {
     smartphones: filteredDevices.filter(d => ['Android', 'iOS', 'Phone'].some(t => d.type.includes(t))).length,
     cameras: filteredDevices.filter(d => ['Camera', 'IP Camera'].some(t => d.type.includes(t))).length,
   };
+  
+  // Use scan metadata total if available
+  const actualTotalDevices = useScanMetadata && data.scan_metadata?.total_devices 
+    ? data.scan_metadata.total_devices 
+    : totalCount;
 
   // --- Process Services (Ports) ---
   // Aggregate services from all devices
@@ -129,20 +143,20 @@ const StatsPanel: React.FC<StatsPanelProps> = ({ data, deviceType }) => {
         <div className="z-10 mb-4 md:mb-0">
             <h2 className="text-xl font-bold text-white tracking-tight mb-1">{deviceType ? `Network ${categoryLabel}` : 'Corporate Network'}</h2>
             <div className="flex items-center gap-3 text-sm">
-                <span className="text-slate-400">{categoryLabel} • {totalCount} of {devices.count} devices</span>
+                <span className="text-slate-400">{categoryLabel} • {actualTotalDevices} {deviceType ? `of ${devices.count}` : ''} devices</span>
             </div>
             <div className="mt-3 flex items-center gap-3">
                  <div className="bg-white text-slate-900 px-2 py-0.5 rounded text-xs font-bold font-mono border border-slate-200 shadow-sm">
                     172.16.16.0/24
                  </div>
-                 <span className="text-xs text-slate-500">{deviceType ? `${categoryLabel} in network` : 'Main office network'} - {totalCount} devices {deviceType ? 'in category' : 'detected'}</span>
+                 <span className="text-xs text-slate-500">{deviceType ? `${categoryLabel} in network` : 'Main office network'} - {actualTotalDevices} devices {deviceType ? 'in category' : 'detected'}</span>
             </div>
         </div>
 
         <div className="flex gap-3 z-10">
             <div className="flex items-center gap-2 bg-slate-800/50 border border-slate-700 px-3 py-1.5 rounded-lg">
                 <Database className="w-3.5 h-3.5 text-slate-400" />
-                <span className="text-xs font-medium text-slate-300">{totalCount} {deviceType ? categoryLabel : 'Total Devices'}</span>
+                <span className="text-xs font-medium text-slate-300">{actualTotalDevices} {deviceType ? categoryLabel : 'Total Devices'}</span>
             </div>
             <div className="flex items-center gap-2 bg-slate-800/50 border border-slate-700 px-3 py-1.5 rounded-lg">
                 <Activity className="w-3.5 h-3.5 text-slate-400" />

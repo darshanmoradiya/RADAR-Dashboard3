@@ -7,7 +7,7 @@ import DeviceOverview from '../components/DeviceOverview';
 import { RawNetworkData, GraphNode, DeviceRecord } from '../types';
 import { 
   Activity, X, Shield, Zap, Terminal, Loader2, CheckCircle2, 
-  AlertCircle, FileText, Network as NetworkIcon, GitBranch
+  AlertCircle, FileText, Network as NetworkIcon, GitBranch, Server
 } from 'lucide-react';
 
 interface DashboardPageProps {
