@@ -10,7 +10,7 @@ import { DEFAULT_DATA } from './constants';
 import { 
   Upload, X, Search, 
   Terminal, CheckCircle2, AlertCircle, Download, ArrowRight, 
-  Bell, Trash2, PanelLeft, Info, RefreshCw
+  Bell, Trash2, PanelLeft, Info, RefreshCw, LogOut, WifiOff, Wifi
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 
@@ -37,29 +37,25 @@ type NotificationType = {
 };
 
 const AppContent: React.FC = () => {
-  const navigate = useNavigate();
+  const navigate = useNavigate(); 
   const location = useLocation();
   
-  // Authentication State
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
-    return localStorage.getItem('isAuthenticated') === 'true';
-  });
-
-  const handleLogin = () => {
-    setIsAuthenticated(true);
-    localStorage.setItem('isAuthenticated', 'true');
+  const handleLogout = () => {
+    setShowLogoutModal(true);
   };
 
-  const handleLogout = () => {
-    setIsAuthenticated(false);
-    localStorage.removeItem('isAuthenticated');
+  const confirmLogout = () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    setShowLogoutModal(false);
     navigate('/login');
   };
-  
+
   const [data, setData] = useState<RawNetworkData>(DEFAULT_DATA);
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
   const [jsonInput, setJsonInput] = useState<string>('');
   const [showInputModal, setShowInputModal] = useState(false);
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   
   // Filtering State
@@ -90,26 +86,87 @@ const AppContent: React.FC = () => {
   const [autoRefresh, setAutoRefresh] = useState<boolean>(() => {
     return localStorage.getItem('autoRefresh') !== 'false'; // Default true
   });
+  const [refreshInterval, setRefreshInterval] = useState<number>(() => {
+    return parseInt(localStorage.getItem('refreshInterval') || '30000');
+  });
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastRefreshTime, setLastRefreshTime] = useState<Date | null>(null);
+  const [nextRefreshIn, setNextRefreshIn] = useState<number>(0);
+  const [isOnline, setIsOnline] = useState(true);
+  const [consecutiveErrors, setConsecutiveErrors] = useState(0);
+  const [showRefreshMenu, setShowRefreshMenu] = useState(false);
   const notificationPanelRef = useRef<HTMLDivElement>(null);
+  const refreshMenuRef = useRef<HTMLDivElement>(null);
+  const countdownIntervalRef = useRef<number | null>(null);
+  const lastRefreshTimeRef = useRef<number>(Date.now());
 
-  // Close notification panel when clicking outside
+  // Close notification panel and refresh menu when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (notificationPanelRef.current && !notificationPanelRef.current.contains(event.target as Node)) {
         setShowNotificationPanel(false);
       }
+      if (refreshMenuRef.current && !refreshMenuRef.current.contains(event.target as Node)) {
+        setShowRefreshMenu(false);
+      }
     };
 
-    if (showNotificationPanel) {
+    if (showNotificationPanel || showRefreshMenu) {
       document.addEventListener('mousedown', handleClickOutside);
     }
 
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, [showNotificationPanel]);
+  }, [showNotificationPanel, showRefreshMenu]);
+
+  // Online/Offline detection
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOnline(true);
+      setConsecutiveErrors(0);
+      addNotification('Connection restored', 'success');
+    };
+    const handleOffline = () => {
+      setIsOnline(false);
+      addNotification('Connection lost', 'warning');
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  // Countdown timer for next refresh
+  useEffect(() => {
+    if (autoRefresh && !isRefreshing) {
+      const elapsed = Date.now() - lastRefreshTimeRef.current;
+      const remaining = Math.max(0, refreshInterval - elapsed);
+      setNextRefreshIn(Math.ceil(remaining / 1000));
+
+      countdownIntervalRef.current = window.setInterval(() => {
+        const elapsed = Date.now() - lastRefreshTimeRef.current;
+        const remaining = Math.max(0, refreshInterval - elapsed);
+        setNextRefreshIn(Math.ceil(remaining / 1000));
+      }, 1000);
+    } else {
+      setNextRefreshIn(0);
+      if (countdownIntervalRef.current) {
+        clearInterval(countdownIntervalRef.current);
+        countdownIntervalRef.current = null;
+      }
+    }
+
+    return () => {
+      if (countdownIntervalRef.current) {
+        clearInterval(countdownIntervalRef.current);
+      }
+    };
+  }, [autoRefresh, isRefreshing, refreshInterval]);
 
   const addNotification = (message: string, type: 'info' | 'success' | 'warning' = 'info') => {
     const id = Date.now();
@@ -143,14 +200,43 @@ const AppContent: React.FC = () => {
       try {
         // Fetch from backend API instead of static file
         const backendUrl = (import.meta as any).env.VITE_BACKEND_URL || 'http://localhost:3001';
+        const token = localStorage.getItem('token');
+        
         const res = await fetch(`${backendUrl}/api/latest-scan`, {
-          cache: "no-store"
+          cache: "no-store",
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
         });
 
         if (!res.ok) {
           console.warn(`Backend API error: ${res.status} ${res.statusText}`);
+          
+          // Handle 401/403 - redirect to login
+          if (res.status === 401 || res.status === 403) {
+            const errorData = await res.json().catch(() => ({}));
+            const message = errorData.message || 'Session expired';
+            
+            localStorage.removeItem('token');
+            localStorage.removeItem('user');
+            
+            if (isManual) {
+              addNotification(message + '. Please login again.', 'warning');
+            }
+            
+            // Delay navigation to show notification
+            setTimeout(() => navigate('/login'), 1000);
+            return;
+          }
+          
           if (isManual) {
-            addNotification('Failed to refresh data', 'warning');
+            if (res.status === 429) {
+              addNotification('Too many requests. Please wait a moment.', 'warning');
+            } else if (res.status >= 500) {
+              addNotification('Server error. Please try again later.', 'warning');
+            } else {
+              addNotification('Failed to refresh data', 'warning');
+            }
           }
           return;
         }
@@ -207,15 +293,22 @@ const AppContent: React.FC = () => {
           }
           isFirstLoad.current = false;
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error("Failed to fetch data from backend API", err);
+        setConsecutiveErrors(prev => prev + 1);
+        
         if (isManual) {
-          addNotification('Network error occurred', 'warning');
+          if (err.message?.includes('fetch') || err.name === 'TypeError') {
+            addNotification('Cannot connect to server. Please check your connection.', 'warning');
+          } else {
+            addNotification('Network error occurred. Please try again.', 'warning');
+          }
         }
       } finally {
         if (isManual) {
           setTimeout(() => setIsRefreshing(false), 500);
         }
+        lastRefreshTimeRef.current = Date.now();
       }
     };
 
@@ -224,25 +317,65 @@ const AppContent: React.FC = () => {
 
     fetchData(); // initial load
     
-    // Auto-refresh every 30 seconds if enabled
-    if (autoRefresh) {
-      pollInterval = window.setInterval(() => fetchData(false), 30000);
+    // Pause auto-refresh when tab is not visible
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        if (pollInterval) {
+          window.clearInterval(pollInterval);
+          pollInterval = null;
+        }
+      } else if (autoRefresh && !pollInterval) {
+        // Resume polling when tab becomes visible
+        pollInterval = window.setInterval(() => fetchData(false), refreshInterval);
+        fetchData(false); // Immediate refresh on return
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    // Auto-refresh with selected interval if enabled and online
+    if (autoRefresh && isOnline && !document.hidden) {
+      // Apply exponential backoff on consecutive errors
+      const backoffMultiplier = Math.min(Math.pow(2, consecutiveErrors), 8);
+      const actualInterval = refreshInterval * backoffMultiplier;
+      
+      pollInterval = window.setInterval(() => fetchData(false), actualInterval);
     }
 
     return () => {
       isMounted = false;
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
       if (pollInterval) window.clearInterval(pollInterval);
     };
-  }, [autoRefresh]);
+  }, [autoRefresh, refreshInterval, isOnline, consecutiveErrors]);
 
-  // Save auto-refresh preference
+  // Save auto-refresh preferences
   useEffect(() => {
     localStorage.setItem('autoRefresh', String(autoRefresh));
   }, [autoRefresh]);
 
+  useEffect(() => {
+    localStorage.setItem('refreshInterval', String(refreshInterval));
+  }, [refreshInterval]);
+
   const handleManualRefresh = () => {
     (window as any).refreshDashboard?.();
   };
+
+  // Keyboard shortcut: Ctrl+R or Cmd+R for manual refresh
+  useEffect(() => {
+    const handleKeyPress = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'r') {
+        e.preventDefault();
+        if (!isRefreshing && isOnline) {
+          handleManualRefresh();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyPress);
+    return () => window.removeEventListener('keydown', handleKeyPress);
+  }, [isRefreshing, isOnline]);
 
   // Compute Filtered Data
   const filteredData = useMemo(() => {
@@ -428,15 +561,7 @@ const AppContent: React.FC = () => {
     setShowLogsModal(true);
   };
 
-  // Show login page if not authenticated
-  if (!isAuthenticated) {
-    return (
-      <Routes>
-        <Route path="/login" element={<LoginPage onLogin={handleLogin} />} />
-        <Route path="*" element={<Navigate to="/login" replace />} />
-      </Routes>
-    );
-  }
+
 
   return (
     <div className="flex h-screen overflow-hidden font-sans relative">
@@ -566,34 +691,143 @@ const AppContent: React.FC = () => {
 
           <div className="flex items-center space-x-3">
              {/* Refresh Button with Auto-refresh Toggle */}
-             <div className="relative">
+             {/* Manual Refresh Button with Status */}
+             <div className="relative flex items-center gap-2">
                <button 
-                  className={`p-2.5 rounded-full transition-all duration-200 ${isRefreshing ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'}`}
+                  className={`relative p-2.5 rounded-full transition-all duration-200 group ${
+                    isRefreshing 
+                      ? 'bg-blue-600 text-white' 
+                      : !isOnline 
+                      ? 'bg-red-600/20 text-red-400'
+                      : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+                  }`}
                   onClick={handleManualRefresh}
-                  disabled={isRefreshing}
-                  title={`Refresh Dashboard${lastRefreshTime ? ' - Last: ' + lastRefreshTime.toLocaleTimeString() : ''}`}
+                  disabled={isRefreshing || !isOnline}
+                  title={`Refresh Dashboard${lastRefreshTime ? '\nLast: ' + lastRefreshTime.toLocaleTimeString() : ''}${!isOnline ? '\n(Offline)' : ''}`}
                >
                   <RefreshCw className={`w-5 h-5 ${isRefreshing ? 'animate-spin' : ''}`} />
+                  {/* Refresh success indicator */}
+                  {lastRefreshTime && !isRefreshing && (
+                    <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-green-500 rounded-full border border-[#020617] opacity-0 group-hover:opacity-100 transition-opacity" />
+                  )}
                </button>
+               
              </div>
              
-             {/* Auto-refresh Toggle Button */}
-             <div className="relative">
+             {/* Auto-refresh Control Panel */}
+             <div className="relative" ref={refreshMenuRef}>
                <button
                  onClick={(e) => {
                    e.stopPropagation();
-                   setAutoRefresh(!autoRefresh);
+                   setShowRefreshMenu(!showRefreshMenu);
                  }}
-                 className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                 className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-all group ${
                    autoRefresh 
                      ? 'bg-blue-600/20 text-blue-400 border border-blue-500/30 hover:bg-blue-600/30' 
                      : 'bg-slate-800/50 text-slate-400 border border-slate-700/50 hover:bg-slate-800 hover:text-slate-300'
                  }`}
-                 title={autoRefresh ? 'Auto-refresh ON (30s)' : 'Auto-refresh OFF'}
+                 title={autoRefresh ? `Auto-refresh ON (${refreshInterval/1000}s)` : 'Auto-refresh OFF'}
                >
-                 <span className={`w-1.5 h-1.5 rounded-full ${autoRefresh ? 'bg-blue-400 animate-pulse' : 'bg-slate-600'}`} />
-                 Auto
+                 <span className={`w-1.5 h-1.5 rounded-full ${
+                   autoRefresh 
+                     ? 'bg-blue-400 animate-pulse' 
+                     : 'bg-slate-600'
+                 }`} />
+                 <span>{autoRefresh ? 'Auto' : 'Manual'}</span>
+                 {autoRefresh && nextRefreshIn > 0 && (
+                   <span className="text-[10px] opacity-70">{nextRefreshIn}s</span>
+                 )}
                </button>
+
+               {/* Dropdown Menu */}
+               <AnimatePresence>
+               {showRefreshMenu && (
+                 <motion.div
+                   initial={{ opacity: 0, y: -10, scale: 0.95 }}
+                   animate={{ opacity: 1, y: 0, scale: 1 }}
+                   exit={{ opacity: 0, y: -10, scale: 0.95 }}
+                   className="absolute top-full right-0 mt-2 w-56 bg-slate-900/95 backdrop-blur-xl border border-slate-700/80 rounded-xl shadow-2xl overflow-hidden z-[100]"
+                 >
+                   {/* Toggle Auto-Refresh */}
+                   <div className="p-3 border-b border-slate-800">
+                     <button
+                       onClick={() => {
+                         setAutoRefresh(!autoRefresh);
+                         if (!autoRefresh) {
+                           setConsecutiveErrors(0);
+                         }
+                       }}
+                       className={`w-full flex items-center justify-between p-2 rounded-lg transition-all ${
+                         autoRefresh
+                           ? 'bg-blue-600/20 text-blue-400'
+                           : 'bg-slate-800/50 text-slate-400 hover:bg-slate-800'
+                       }`}
+                     >
+                       <span className="text-sm font-medium">Auto Refresh</span>
+                       <div className={`w-9 h-5 rounded-full transition-all ${
+                         autoRefresh ? 'bg-blue-600' : 'bg-slate-700'
+                       } relative`}>
+                         <div className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform ${
+                           autoRefresh ? 'translate-x-4' : 'translate-x-0'
+                         }`} />
+                       </div>
+                     </button>
+                   </div>
+
+                   {/* Interval Selection */}
+                   <div className="p-3">
+                     <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-2">Refresh Interval</div>
+                     <div className="space-y-1">
+                       {[
+                         { value: 60000, label: '1 minute'},
+                         { value: 120000, label: '2 minutes'},
+                         { value: 300000, label: '5 minutes'},
+                         { value: 600000, label: '10 minutes'},
+                         { value: 900000  , label: '15 minutes'}
+                       ].map(({ value, label }) => (
+                         <button
+                           key={value}
+                           onClick={() => {
+                             setRefreshInterval(value);
+                             setConsecutiveErrors(0);
+                             lastRefreshTimeRef.current = Date.now();
+                           }}
+                           className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs transition-all ${
+                             refreshInterval === value
+                               ? 'bg-blue-600/20 text-blue-400 border border-blue-500/30'
+                               : 'text-slate-400 hover:bg-slate-800/50 hover:text-slate-300'
+                           }`}
+                         >
+                           
+                           <span className="flex-1 text-left">{label}</span>
+                           {refreshInterval === value && (
+                             <CheckCircle2 className="w-3.5 h-3.5 text-blue-400" />
+                           )}
+                         </button>
+                       ))}
+                     </div>
+                   </div>
+
+                   {/* Status Footer */}
+                   <div className="p-3 border-t border-slate-800 bg-slate-900/50">
+                     <div className="flex items-center justify-between text-[10px]">
+                       <div className="flex items-center gap-1.5 text-slate-500">
+                         {isOnline ? (
+                           <><Wifi className="w-3 h-3 text-green-500" /><span>Online</span></>
+                         ) : (
+                           <><WifiOff className="w-3 h-3 text-red-500" /><span>Offline</span></>
+                         )}
+                       </div>
+                       {consecutiveErrors > 0 && (
+                         <span className="text-yellow-500">
+                           {consecutiveErrors} error{consecutiveErrors > 1 ? 's' : ''}
+                         </span>
+                       )}
+                     </div>
+                   </div>
+                 </motion.div>
+               )}
+               </AnimatePresence>
              </div>
 
              {/* Notification Button */}
@@ -788,6 +1022,19 @@ const AppContent: React.FC = () => {
                       navigate('/dashboard');
                     }}
                     searchTerm={searchTerm}
+                    onDevicesUpdate={(updatedDevices) => {
+                      setData(prev => ({
+                        ...prev,
+                        data: {
+                          ...prev.data,
+                          devices: {
+                            ...prev.data.devices,
+                            records: updatedDevices
+                          }
+                        }
+                      }));
+                      addNotification('Device inventory updated', 'success');
+                    }}
                   />
                 } />
                 <Route path="/hierarchy" element={
@@ -806,6 +1053,56 @@ const AppContent: React.FC = () => {
           </div>
         </div>
       </main>
+
+      {/* Logout Confirmation Modal */}
+      <AnimatePresence>
+        {showLogoutModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4"
+            onClick={() => setShowLogoutModal(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+              className="glass-panel border border-slate-700/50 rounded-2xl p-6 max-w-md w-full shadow-2xl"
+            >
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-12 h-12 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center justify-center">
+                  <LogOut className="w-6 h-6 text-red-400" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-white">Confirm Logout</h3>
+                  <p className="text-xs text-slate-400">You will be redirected to login</p>
+                </div>
+              </div>
+              
+              <p className="text-slate-300 text-sm mb-6">
+                Are you sure you want to logout?
+              </p>
+              
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowLogoutModal(false)}
+                  className="flex-1 px-4 py-2.5 rounded-xl bg-slate-800/50 hover:bg-slate-700/50 border border-slate-700 text-slate-300 hover:text-white text-sm font-medium transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmLogout}
+                  className="flex-1 px-4 py-2.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 hover:border-red-500/50 text-red-400 hover:text-red-300 text-sm font-medium transition-all"
+                >
+                  Logout
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Input Modal */}
       <AnimatePresence>
@@ -961,9 +1258,67 @@ const AppContent: React.FC = () => {
 const App: React.FC = () => {
   return (
     <Router>
-      <AppContent />
+      <Routes>
+        <Route path="/login" element={<LoginPageWrapper />} />
+        <Route path="/*" element={<ProtectedRoute><AppContent /></ProtectedRoute>} />
+      </Routes>
     </Router>
   );
+};
+
+// Protected Route Component
+const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const navigate = useNavigate();
+  const [isAuthenticated, setIsAuthenticated] = React.useState(() => {
+    return !!localStorage.getItem('token');
+  });
+
+  // Monitor localStorage changes
+  React.useEffect(() => {
+    const checkAuth = () => {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        setIsAuthenticated(false);
+      }
+    };
+
+    // Check auth every second
+    const interval = setInterval(checkAuth, 1000);
+
+    // Listen for storage events (from other tabs)
+    window.addEventListener('storage', checkAuth);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('storage', checkAuth);
+    };
+  }, []);
+
+  // Redirect to login if not authenticated
+  React.useEffect(() => {
+    if (!isAuthenticated) {
+      navigate('/login', { replace: true });
+    } 
+  }, [isAuthenticated, navigate]);
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;                                                                                            
+  }
+  
+  return <>{children}</>;
+};  
+
+// Login Page Wrapper
+const LoginPageWrapper: React.FC = () => {
+  const navigate = useNavigate();
+  
+  const handleLogin = (token: string, userData: any) => {
+    localStorage.setItem('token', token);
+    localStorage.setItem('user', JSON.stringify(userData));
+    navigate('/');
+  };
+  
+  return <LoginPage onLogin={handleLogin} />;
 };
 
 export default App;

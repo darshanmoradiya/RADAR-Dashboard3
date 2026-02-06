@@ -4,7 +4,7 @@ import { motion } from 'framer-motion';
 import { Lock, User, Eye, EyeOff, AlertCircle } from 'lucide-react';
 
 interface LoginPageProps {
-  onLogin: () => void;
+  onLogin: (token: string, user: any) => void;
 }
 
 const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
@@ -15,25 +15,59 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  // Static credentials
-  const STATIC_USERNAME = 'admin';
-  const STATIC_PASSWORD = 'Radar#1012';
-
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setIsLoading(true);
 
-    // Simulate a slight delay for better UX
-    setTimeout(() => {
-      if (username === STATIC_USERNAME && password === STATIC_PASSWORD) {
-        onLogin();
-        navigate('/dashboard');
-      } else {
-        setError('Invalid username or password');
-        setIsLoading(false);
+    try {
+      const backendUrl = (import.meta as any).env.VITE_BACKEND_URL || 'http://localhost:3001';
+      const endpoint = '/api/auth/login';
+      const payload = { username, password };
+
+      const response = await fetch(`${backendUrl}${endpoint}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        // Handle specific error cases
+        if (response.status === 429) {
+          throw new Error('Too many login attempts. Please try again in 15 minutes.');
+        } else if (response.status === 401) {
+          throw new Error('Invalid username or password');
+        } else if (response.status === 500) {
+          throw new Error('Server error. Please try again later.');
+        } else if (response.status === 503) {
+          throw new Error('Service temporarily unavailable. Please try again.');
+        }
+        throw new Error(data.message || 'Authentication failed');
       }
-    }, 500);
+
+      // Store token in localStorage
+      localStorage.setItem('token', data.token);
+      localStorage.setItem('user', JSON.stringify(data.user));
+      
+      // Call onLogin callback
+      onLogin(data.token, data.user);
+      
+      // Navigate to dashboard
+      navigate('/');
+    } catch (err: any) {
+      // Network error (fetch failed)
+      if (err.message.includes('fetch')) {
+        setError('Cannot connect to server. Please check your connection.');
+      } else {
+        setError(err.message || 'An error occurred. Please try again.');
+      }
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
